@@ -2,65 +2,70 @@
 
 [English](README.en.md)
 
-캡처카드 화면을 직접 받아서 프레임을 늘려 보여 주는 윈도우 프로그램이에요. 30 → 60, 60 → 120, 일부 모델은 3배·4배도 돼요.
-다른 프로그램을 켤 필요가 없어요.
+캡처보드로 받은 콘솔 화면에 프레임 생성을 걸어 주는 윈도우 프로그램입니다.
+30fps 게임은 60fps로, 60fps 게임은 120fps로 늘려 주고, 일부 모델은 3배·4배까지 됩니다.
+OBS 같은 방송 프로그램 없이 이것 하나만 켜면 됩니다.
 
-## 받기
+## 다운로드
 
 [Releases](https://github.com/RXTIGA90/peussok/releases/latest)에서 받으세요.
 
 - **Peussok-Setup-x.x.x.exe** : 설치 버전
-- **Peussok-x.x.x-Portable.zip** : 포터블 버전 (압축을 풀고 Peussok.exe 실행)
+- **Peussok-x.x.x-Portable.zip** : 포터블 버전 (압축 풀고 Peussok.exe 실행)
 
-코드 서명이 없어서 윈도우가 경고를 띄울 수 있어요. "추가 정보 → 실행"을 누르면 돼요. 쓰는 법은 프로그램 안의 "사용 가이드"와 설명서.txt에 있어요.
+코드 서명이 없어서 처음 실행할 때 윈도우 경고가 뜰 수 있습니다. "추가 정보 → 실행"을 누르면 됩니다.
+사용법은 프로그램 왼쪽 아래 "사용 가이드"와 설명서.txt에 있습니다.
 
-## 할 수 있는 것
+## 주요 기능
 
-- 캡처카드를 직접 열어서(DirectShow) 전체 화면으로 빠르게 보여 줘요. 다른 회사 카드도 돼요: NV12, P010, YUY2, UYVY(HDYC), RGB32, RGB24, I420, YV12, MJPEG. 카드, 크기·형식, 초당 장수를 직접 고를 수 있어요.
-- 모델 여섯 가지: FSR 3, AMD FSR FG, RIFE 4.6, RIFE 4.15 lite, NVIDIA DLSS FG, NVIDIA VFG
-- **미리 시작**: 화면을 줄 단위로 넘겨주는 카드에서는 화면이 다 오기 전에 만들기 시작해요.
-- HUD·글자 보호, 장면 전환 감지, 선명도, HDR 모니터 출력, G-SYNC·FreeSync
-- 게임기에서 HDR을 켰을 때 "게임기 HDR 받기"로 10비트(P010)로 받아요. 색은 원본 그대로, 색 계단은 줄어요.
-- **DLSS 5**(NVIDIA 뉴럴 렌더링): 게임 화면을 실사 느낌으로 바꿔요. 강도 1~5, 피부 부드럽게, 적용 순서(생성 뒤·생성 전), 깜빡임 억제.
-- **녹화**: 보이는 화면 그대로(만든 프레임 포함) 캡처카드 소리와 함께 MP4로 저장해요(그래픽카드 인코더, HEVC 또는 H.264, Ctrl+Alt+R).
-- 벤치마크가 내 컴퓨터에 맞는 모델을 찾아 줘요. 모델이 멈추면 다른 모델로 바꿔서 계속해요.
-- 화면을 하나씩 짚어 주는 사용 가이드(왼쪽 아래 '사용 가이드'), 화면·입력·소리·녹화 탭, 탭마다 '기본값으로'
-- 한국어와 영어
+- **프레임 생성 모델 6종**: NVIDIA VFG, NVIDIA DLSS FG, AMD FSR FG, FSR 3, RIFE 4.6, RIFE 4.15 lite
+- **DLSS 5**: 게임 화면을 실사 느낌으로 바꿔 줍니다 (강도 1~5, 피부 보정, 깜빡임 억제)
+- **녹화**: 보이는 화면 그대로(생성 프레임 포함) 캡처보드 소리와 함께 MP4로 저장 (HEVC/H.264, Ctrl+Alt+R)
+- **선행 생성**: 프레임이 다 들어오기 전에 생성을 시작해서 지연을 줄입니다
+- **HUD·자막 보호**, 장면 전환 감지, 샤프닝, HDR 모니터 출력, G-SYNC·FreeSync 지원
+- **콘솔 HDR**: 콘솔에서 HDR을 켰다면 "게임기 HDR 받기"로 10비트(P010)로 받습니다. 색감은 원본 그대로, 하늘 같은 곳의 색 띠(밴딩)는 줄어듭니다
+- **다양한 캡처보드 지원**: NV12, P010, YUY2, UYVY(HDYC), RGB32, RGB24, I420, YV12, MJPEG. 저가형 USB 캡처보드도 됩니다
+- 벤치마크로 내 PC에 맞는 모델·배수 추천, 모델이 멈추면 자동으로 다른 모델로 전환
+- 탭마다 "기본값으로" 버튼, 한국어·영어 지원
 
-## 지연
+## 지연 시간
 
-RTX 5080, 4K, 2배에서 쟀어요. 원본이 다 도착한 때부터 화면으로 내보낼 때(Present)까지이고, 60fps / 30fps 게임이에요.
-게임기, 캡처카드, 모니터의 지연은 들어 있지 않아요.
+RTX 5080, 4K, 2배 기준입니다. 캡처 프레임이 다 들어온 시점부터 화면에 출력(Present)하기까지의 시간이며, 60fps / 30fps 게임 기준입니다.
+콘솔, 캡처보드, 모니터 자체의 지연은 포함되지 않았습니다.
 
-| 모델 | 미리 시작 끔 | 조금 | 많이 |
+| 모델 | 선행 생성 끔 | 선행 생성 약 | 선행 생성 강 |
 |---|---|---|---|
 | FSR 3 | 5.4 / 8.4 ms | 4.6 / 7.3 ms | 1.0 / 4.1 ms |
 | NVIDIA DLSS FG | 6.1 / 9.1 ms | 4.5 / 7.3 ms | 2.0 / 5.0 ms |
 | NVIDIA VFG | 7.1 / 9.9 ms | 4.7 / 7.4 ms | 2.2 / 5.2 ms |
 | RIFE 4.6 | 7.1 / 10.1 ms | 4.8 / 7.9 ms | 2.3 / 5.8 ms |
 
-"많이"에서는 만든 장면의 아래쪽을 짐작해서 채워요. 원본은 언제나 온전해요.
+선행 생성을 "강"으로 두면 생성 프레임의 화면 아래쪽 일부를 예측해서 채웁니다. 원본 프레임은 항상 그대로입니다.
 
-## 필요한 것
+## 요구 사양
 
-- 윈도우 10/11 64비트, DirectX 11과 Vulkan 1.2(FSR 3은 1.3) 이상이 되는 그래픽카드, 캡처카드
-- NVIDIA VFG와 DLSS FG는 드라이버가 허용하는 RTX 카드(공식은 RTX 40·50)가 필요해요.
-- DLSS 5는 RTX 50과 2026년 9월 이후 드라이버, 그리고 이 PC의 게임(Steam·Epic·Xbox 앱)에 들어 있는 NVIDIA 서명 파일(nvngx_dlssnr.dll)이 필요해요. 프로그램이 자동으로 찾고, 없으면 직접 고를 수 있어요. 이 파일은 NVIDIA 것이라 배포 파일에 넣지 않아요.
-- 확인한 구성: RTX 5080과 AVerMedia GC573, USB 2.0 카드(MS2109, MJPEG로 1080p 30fps). 다른 카드는 확인이 부족해서 결과를 알려 주시면 큰 도움이 돼요.
+- 윈도우 10/11 64비트, 캡처보드
+- DirectX 11과 Vulkan 1.2 이상을 지원하는 그래픽카드 (FSR 3은 Vulkan 1.3)
+- NVIDIA VFG·DLSS FG: RTX 그래픽카드 (공식 지원은 RTX 40·50 시리즈)
+- DLSS 5: RTX 50 시리즈, 2026년 9월 이후 드라이버, 그리고 PC에 DLSS 5를 지원하는 게임(Steam·Epic·Xbox 앱)이 설치되어 있어야 합니다.
+  DLSS 5 파일(nvngx_dlssnr.dll)은 NVIDIA 소유라 배포 파일에 넣지 않고, 설치된 게임에서 자동으로 찾아 씁니다. 못 찾으면 직접 지정할 수 있습니다.
+- 테스트한 환경: RTX 5080 + AVerMedia GC573, USB 2.0 캡처보드(MS2109, MJPEG 1080p 30fps).
+  다른 캡처보드·그래픽카드에서 써 보시고 결과를 알려 주시면 큰 도움이 됩니다.
 
-## 아직 안 되는 것
+## 알려진 제한
 
-- 방송(스트리밍)은 없어요. 게임기 HDR 밝기 그대로 받기는 안 돼요(GC573은 HDR을 일반 화면으로 바꿔서 넘겨줘요). HDCP 화면은 나오지 않아요.
-- 창보다 전체 화면이 빨라요(창은 7~11 ms 늘어요).
-- 배포 파일에 서명이 없어서 윈도우가 경고를 띄워요.
+- 방송(스트리밍) 기능은 없습니다.
+- 콘솔 HDR을 HDR 밝기 그대로 받을 수는 없습니다. GC573은 HDR 신호를 SDR로 변환해서 넘겨줍니다.
+- HDCP가 걸린 화면은 나오지 않습니다. 콘솔에서 HDCP를 꺼 주세요.
+- 창 모드보다 전체 화면이 빠릅니다 (창 모드는 7~11 ms 늘어납니다).
 
 ## 개인 정보
 
-프로그램이 보내는 것은 없어요. 내려받는 것은 NVIDIA VFG 런타임(약 416 MB, pypi.nvidia.com)뿐이고, 동의했을 때만 받아요.
+프로그램이 외부로 보내는 데이터는 없습니다. 인터넷에서 받는 것은 NVIDIA VFG 런타임(약 416 MB, pypi.nvidia.com)뿐이고, 동의했을 때만 받습니다.
 
-## 직접 만들기
+## 직접 빌드하기
 
-윈도우, Git Bash, Python 3이 필요해요.
+윈도우, Git Bash, Python 3이 필요합니다.
 
 ```
 powershell -ExecutionPolicy Bypass -File tools/Get-Toolchain.ps1
@@ -69,13 +74,13 @@ bash package.sh
 bash installer/build.sh
 ```
 
-DLSS FG와 AMD FSR FG는 NVIDIA·AMD의 SDK가 있어야 만들어져요(`PK_DLSSG_SRC`, `PK_AMDFG_SRC`). 없으면 두 모델만 빠져요.
+DLSS FG와 AMD FSR FG는 NVIDIA·AMD SDK가 있어야 빌드됩니다(`PK_DLSSG_SRC`, `PK_AMDFG_SRC`). 없으면 이 두 모델만 빠집니다.
 
 ## 라이선스
 
-[GPL-3.0](LICENSE)이고 NVIDIA·AMD 라이브러리에 대한 [예외](LICENSE-EXCEPTION.txt)가 있어요. 다른 사람이 만든 부분은
-[engine/THIRD_PARTY_NOTICES.txt](engine/THIRD_PARTY_NOTICES.txt)에 있어요. 이름과 아이콘은 포함되지 않아요.
-NVIDIA, GeForce, DLSS, G-SYNC는 NVIDIA의 상표이고 AMD, FidelityFX는 AMD의 상표예요.
-개인이 만든 프로그램이고 NVIDIA, AMD, 캡처카드 제조사와 관계가 없어요.
+[GPL-3.0](LICENSE)이며, NVIDIA·AMD 라이브러리에 대한 [예외 조항](LICENSE-EXCEPTION.txt)이 있습니다.
+다른 사람이 만든 부분은 [engine/THIRD_PARTY_NOTICES.txt](engine/THIRD_PARTY_NOTICES.txt)에 있습니다. 프로그램 이름과 아이콘은 라이선스에 포함되지 않습니다.
+NVIDIA, GeForce, DLSS, G-SYNC는 NVIDIA의 상표이고, AMD, FidelityFX는 AMD의 상표입니다.
+개인이 만든 프로그램이며 NVIDIA, AMD, 캡처보드 제조사와 관계가 없습니다.
 
-지금은 다른 사람의 코드를 받지 않아요. 버그 신고와 시험 결과는 Issues에 남겨 주세요.
+지금은 외부 코드 기여(PR)는 받지 않습니다. 버그 제보와 테스트 결과는 Issues에 남겨 주세요.

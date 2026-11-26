@@ -22,7 +22,7 @@ No other program is needed.
 Measured on an RTX 5080 at 4K, 2x: from the moment the whole original has arrived to the moment it is handed to the screen
 (Present), in a game with 60 / 30 pictures a second. It does not include the console, the card or the monitor.
 
-| Model | Start early off | a little | a lot |
+| Model | Start early off | Low | High |
 |---|---|---|---|
 | FSR 3 | 5.4 / 8.4 ms | 4.6 / 7.3 ms | 1.0 / 4.1 ms |
 | NVIDIA DLSS FG | 6.1 / 9.1 ms | 4.5 / 7.3 ms | 2.0 / 5.0 ms |

@@ -763,7 +763,7 @@ static void page_generate(Col &c)
     double refresh = num.hz_mhz ? 1000000.0 / num.hz_mhz : 0, share = num.share.get();
     slider_row(c, L"\xE916", 10, tr(L"만든 장면 표시", L"Generated frame time"), share > 0 ? fmt(L"%ld%% · %.1f ms%ls", tune.share, share, tune.sync && refresh > share ? tr(L" (<1주기)", L" (<1 refresh)") : L"") : fmt(L"%ld%%", tune.share), tr(L"짧으면 지연이 줄고 길면 움직임이 고르게 보여요", L"Shorter: less latency. Longer: smoother"), tune.share, 20, 50, 25);
     slider_row(c, L"\xE81C", 11, tr(L"여유 시간", L"Safety margin"), fmt(L"%.1f ms", tune.margin_x10 / 10.0), tr(L"늘리면 덜 튀고 줄이면 지연이 짧아져요", L"Higher: steadier. Lower: less latency"), tune.margin_x10, 0, 30, 1);
-    int e = segment_row(c, L"\xE945", tr(L"미리 시작", L"Start early"), num.ahead.get() > 50 ? tr(L"동작 중. 화면 아래쪽은 짐작해요", L"Active. The bottom part is estimated") : tr(L"화면이 다 오기 전에 만들어요. 아래쪽은 짐작해요", L"Starts before the full frame arrives"), {tr(L"끔", L"Off"), tr(L"조금", L"A little"), tr(L"많이", L"A lot")}, tune.early);
+    int e = segment_row(c, L"\xE945", tr(L"선행 생성", L"Start early"), num.ahead.get() > 50 ? tr(L"작동 중 · 화면 아래쪽 일부는 예측해서 채워요", L"Active. The bottom part is estimated") : tr(L"프레임이 다 들어오기 전에 생성을 시작해 지연을 줄여요", L"Starts before the full frame arrives"), {tr(L"끔", L"Off"), tr(L"약", L"Low"), tr(L"강", L"High")}, tune.early);
     if (e >= 0) set(tune.early, e);
     heading(c, tr(L"만든 장면 보호", L"Protecting made frames"));
     switch_row(c, L"\xE7B5", tr(L"HUD 보호", L"HUD protection"), tr(L"고정된 글자를 지켜요. 글자 창이 깨지면 끄세요", L"Keeps fixed HUD and text steady"), tune.hud);
@@ -836,7 +836,7 @@ static void page_picture(Col &c)
             return;
         }
         c.y += 46;
-        note(c, tr(L"이 파일은 프쏙에 들어 있지 않아요. 켜면 미리 시작은 동작하지 않아요. 고정된 HUD는 원래 색을 지켜요", L"The file is not included. Start early does not work with it. A fixed HUD keeps its colors"), 2);
+        note(c, tr(L"이 파일은 프쏙에 들어 있지 않아요. 켜면 선행 생성은 작동하지 않아요. 고정된 HUD는 원래 색을 지켜요", L"The file is not included. Start early does not work with it. A fixed HUD keeps its colors"), 2);
     }
 }
 // A row with a field that shows the chosen value; a click opens the list (the system's own menu). The index chosen, or -1.
@@ -1027,7 +1027,7 @@ static void page_input(Col &c)
                     app.audio.rate ? fmt(L"%d Hz", app.audio.rate).c_str() : tr(L"없음", L"none")));
         if (rate > 1) note(c, fmt(tr(L"카드가 실제로 보내는 장수: 초당 %.1f장", L"Pictures the card really sends: %.1f per second"), rate));
     }
-    if (app.current.pixel == Pixel::mjpg) note(c, fmt(tr(L"MJPEG를 푸는 데 %.1f ms (%ls). 미리 시작은 쓸 수 없어요", L"MJPEG decoding: %.1f ms (%ls). Start early is not available"), Mjpeg::last_ms(), Mjpeg::with()), 2, Mjpeg::last_ms() > 0.8 * 1000 / std::max(10.0, app.current.fps) ? AMBER : SOFT);
+    if (app.current.pixel == Pixel::mjpg) note(c, fmt(tr(L"MJPEG를 푸는 데 %.1f ms (%ls). 선행 생성은 쓸 수 없어요", L"MJPEG decoding: %.1f ms (%ls). Start early is not available"), Mjpeg::last_ms(), Mjpeg::with()), 2, Mjpeg::last_ms() > 0.8 * 1000 / std::max(10.0, app.current.fps) ? AMBER : SOFT);
     if (rate > 10 && app.current.fps > 10 && fabs(rate / app.current.fps - 1) > 0.04)
     {
         // a USB 2.0 card (or port): it announces 60 but sends what the bus allows; generation still doubles it
