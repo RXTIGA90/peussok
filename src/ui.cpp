@@ -182,14 +182,14 @@ static float card_top, card_more; // the top of the last card_row (its returned 
 static float card_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, float h = 60)
 {
     float y = c.y, more = 0;
-    if (!d.empty()) more = std::max(0.f, std::ceil(d_height(F_SMALL, d, c.w - 64)) - 21.f);
+    if (!d.empty()) more = std::max(0.f, std::ceil(d_height(F_SMALL, d, c.w - 120)) - 21.f); // room for a switch or a value at the right
     card_top = y;
     card_more = more;
     box(c.x, y, c.w, h + more, 10, CARD, EDGE);
     text(F_ICON, ACCENT, c.x + 14, y, 24, 60, A_CENTER, icon);
     float th = d.empty() ? 60 : 24;
     text(F_BOLD, TEXT, c.x + 50, d.empty() ? y : y + 9, c.w - 64, th, A_LEFT, t);
-    if (!d.empty()) text(F_SMALL, SOFT, c.x + 50, y + 31, c.w - 64, 20 + more, A_WRAP, d);
+    if (!d.empty()) text(F_SMALL, SOFT, c.x + 50, y + 31, c.w - 120, 20 + more, A_WRAP, d);
     c.y += h + more + 6;
     return y + more;
 }
@@ -848,6 +848,34 @@ static void page_picture(Col &c)
         }
         c.y += 46;
         note(c, tr(L"이 파일은 프쏙에 들어 있지 않아요. 켜면 선행 생성은 꺼져요. 고정된 HUD는 원래 색을 유지해요", L"The file is not included. Start early does not work with it. A fixed HUD keeps its colors"), 2);
+        // how to get the file: NVIDIA's own file only, never a changed or downloaded copy
+        static bool how;
+        if (button(c.x, c.y, c.w, 36, how ? tr(L"DLSS 5 파일 찾는 법 닫기", L"Close: how to get the DLSS 5 file") : tr(L"DLSS 5 파일 찾는 법", L"How to get the DLSS 5 file"), how, true, L"\xE946"))
+        {
+            how = !how;
+            gui.mode = MOVE;
+            repaint_all();
+            return;
+        }
+        c.y += 44;
+        if (how)
+        {
+            std::wstring s = tr(L"DLSS 5 파일(nvngx_dlssnr.dll)은 NVIDIA가 아직 따로 배포하지 않아서 프쏙에 넣을 수 없어요. 아래 중 하나만 하면 돼요.\n\n"
+                                L"1. DLSS 5를 지원하는 게임을 이 PC에 설치하세요. 프쏙이 Steam·Epic·Xbox 앱 게임 폴더에서 자동으로 찾아요.\n"
+                                L"2. 이미 파일이 있다면 Peussok.exe가 있는 폴더에 넣으세요. 다음에 켤 때 바로 써요. (아래 '프로그램 폴더 열기')\n"
+                                L"3. 위의 '파일 고르기'로 직접 골라도 돼요.\n\n"
+                                L"NVIDIA가 서명한 정식 파일만 써요. 인터넷에 올라온 수정본이나 출처를 모르는 파일은 쓰지 않아요. RTX 50과 최신 드라이버가 필요해요. NVIDIA가 공식 배포를 허용하면 프쏙에 바로 넣을게요.",
+                                L"The DLSS 5 file (nvngx_dlssnr.dll) is not distributed by NVIDIA on its own yet, so it cannot be included. Any one of these is enough:\n\n"
+                                L"1. Install a game with DLSS 5 on this PC. PEUSSOK finds it in Steam, Epic and Xbox app game folders.\n"
+                                L"2. If you already have the file, put it in the folder of Peussok.exe. It is used on the next start (Open program folder below).\n"
+                                L"3. Or choose it with Choose the file above.\n\n"
+                                L"Only NVIDIA-signed files are used, never changed copies or files of unknown origin. Needs an RTX 50 and a current driver.");
+            float th = std::ceil(d_height(F_SMALL, s, c.w - 8)) + 4;
+            text(F_SMALL, TEXT, c.x + 4, c.y, c.w - 8, th, A_WRAP, s);
+            c.y += th + 8;
+            if (button(c.x, c.y, c.w, 36, tr(L"프로그램 폴더 열기", L"Open program folder"), false, true, L"\xE838")) { gui.mode = MOVE; ShellExecuteW(nullptr, L"open", exe_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL); return; }
+            c.y += 44;
+        }
     }
 }
 // A row with a field that shows the chosen value; a click opens the list (the system's own menu). The index chosen, or -1.

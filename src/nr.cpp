@@ -104,6 +104,10 @@ static std::wstring in_games()
         roots.push_back(std::wstring(1, d) + L":\\Epic Games");
     }
     std::vector<std::wstring> all;
+    // first where NVIDIA itself puts its files: the display driver and the NVIDIA app's NGX folder (no game needed when it is there)
+    wchar_t win[MAX_PATH] = L"", pd[MAX_PATH] = L"";
+    if (GetEnvironmentVariableW(L"SystemRoot", win, MAX_PATH)) dig(std::wstring(win) + L"\\System32\\DriverStore\\FileRepository", 3, all);
+    if (GetEnvironmentVariableW(L"ProgramData", pd, MAX_PATH)) dig(std::wstring(pd) + L"\\NVIDIA\\NGX", 4, all);
     for (auto &r : roots) dig(r, 5, all); // root, game, ..., streamline, nvngx_dlssnr.dll
     auto when = [](const std::wstring &f) {
         WIN32_FILE_ATTRIBUTE_DATA a{};
@@ -129,7 +133,8 @@ std::wstring nr_file()
     if (looked) return found;
     looked = true;
     found = ini_text(L"nr_file", L"");
-    if (found.empty() || !there(found)) found = data_dir() + L"\\dlss5\\nvngx_dlssnr.dll";
+    if (found.empty() || !there(found)) found = exe_dir() + L"\\nvngx_dlssnr.dll"; // put there by the person who uses the program
+    if (!there(found)) found = data_dir() + L"\\dlss5\\nvngx_dlssnr.dll";
     if (there(found) && !nvidia_signed(found)) { logf("nr: the file is not signed by NVIDIA"); found.clear(); }
     if (found.empty() || !there(found)) found = in_games(); // checks the signature itself
     known = !found.empty();
