@@ -1,0 +1,25 @@
+PEUSSOK
+Copyright (c) 2026 RXTIGA90
+
+This program is free software: you can redistribute it and/or modify it under the terms of version 3 of the GNU General Public
+License as published by the Free Software Foundation (the file LICENSE), with the additional permission below.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Additional permission under GNU GPL version 3 section 7
+
+If you modify this program, or any covered work, by linking or combining it with the libraries named below (or a newer version of
+them), the licensors of this program grant you additional permission to convey the resulting work. The Corresponding Source of such
+a work does not include the source code of these libraries, and this license does not extend to them; they stay under the terms of
+their makers.
+
+ - graphics card drivers and the libraries that come with them
+ - NVIDIA NGX and DLSS: nvngx_*.dll, NVIDIA Streamline
+ - NVIDIA Video Effects SDK / Video Frame Generation and the CUDA runtime it needs
+ - AMD FidelityFX / FSR: amd_fidelityfx_*.dll
+ - the Vulkan loader
+
+If you modify this program you may extend this permission to your version, but you do not have to.
+
+Parts made by others (third_party, engine/licenses) keep their own licenses; see engine/THIRD_PARTY_NOTICES.txt.
+The name PEUSSOK (프쏙) and its icon are not covered by this license. Please give a changed version another name.

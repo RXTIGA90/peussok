@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * x64/vulkan-1.dll of VulkanRT-X64-1.4.363.0-Components.zip (LunarG, https://vulkan.lunarg.com/sdk/home#windows,
+ * zip SHA-256 A25A927AA8B9F0371048F1861CF88AC3B9BC9B1FB332C42D897C8AB32695769A), unmodified. */
+#define PK_VULKAN_SHA256 "E1FCFC9489BEEFA6A6D9D11D6C7517F6A2B7F16E0D3FB8F4103BEE0210F314A3"

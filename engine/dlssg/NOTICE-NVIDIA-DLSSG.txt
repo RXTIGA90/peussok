@@ -1,0 +1,6 @@
+PEUSSOK engine slot: NVIDIA DLSS Frame Generation (NGX DLSSG API, offscreen).
+This software uses NVIDIA DLSS. NVIDIA, the NVIDIA logo and DLSS are trademarks of NVIDIA Corporation.
+pk_dlssg.dll is PEUSSOK code built against the public DLSS SDK headers (source: engine/dlssg/dlssg_ngx.cpp).
+nvngx_dlssg.dll is NVIDIA's signed runtime from the public NVIDIA Streamline/DLSS SDK (310.9.16), redistributed unmodified
+under the NVIDIA RTX SDKs license (LICENSE-NVIDIA-RTX-SDK.txt beside this file). It is not part of the PEUSSOK source and
+not covered by its license.

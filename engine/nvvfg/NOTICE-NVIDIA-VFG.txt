@@ -1,0 +1,5 @@
+PEUSSOK engine slot: NVIDIA Video Frame Generation (NVIDIA Video Effects SDK 1.3, nvidia-vfx 0.2.0.0).
+No NVIDIA files are shipped with PEUSSOK. Get-NvidiaVfg.ps1 downloads the official nvidia-vfx package from
+https://pypi.nvidia.com/nvidia-vfx/ after the user agrees, checks its SHA-256 and the NVIDIA signature of each DLL,
+and keeps only the runtime DLLs in %LOCALAPPDATA%\Peussok\nvidia-vfg. NVIDIA license terms apply to that runtime:
+https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/

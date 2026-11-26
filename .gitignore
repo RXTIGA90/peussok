@@ -1,0 +1,7 @@
+/toolchain/
+/build/
+/dist/
+/sdk/
+*.pdb
+*.log
+*.bak*
