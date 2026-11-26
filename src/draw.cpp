@@ -121,6 +121,14 @@ float d_width(Font f, const std::wstring &s)
     release(l);
     return m.width;
 }
+float d_height(Font f, const std::wstring &s, float w)
+{
+    IDWriteTextLayout *l = nullptr;
+    DWRITE_TEXT_METRICS m{};
+    if (SUCCEEDED(dw->CreateTextLayout(s.c_str(), (UINT32)s.size(), formats[f][A_WRAP], w, 4000, &l))) l->GetMetrics(&m);
+    release(l);
+    return m.height;
+}
 void d_box(float x, float y, float w, float h, float radius, Ink fill, Ink line, float width)
 {
     if (!d_visible(x, y, w, h)) return;

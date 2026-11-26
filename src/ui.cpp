@@ -178,26 +178,30 @@ static void note(Col &c, const std::wstring &s, int lines = 1, Ink col = SOFT)
     c.y += 18.f * (float)lines + 7;
 }
 // A card with icon, title and description; the caller puts its control at the right.
+static float card_top, card_more; // the top of the last card_row (its returned y moves down when the description wraps)
 static float card_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, float h = 60)
 {
-    float y = c.y;
-    box(c.x, y, c.w, h, 10, CARD, EDGE);
+    float y = c.y, more = 0;
+    if (!d.empty()) more = std::max(0.f, std::ceil(d_height(F_SMALL, d, c.w - 64)) - 21.f);
+    card_top = y;
+    card_more = more;
+    box(c.x, y, c.w, h + more, 10, CARD, EDGE);
     text(F_ICON, ACCENT, c.x + 14, y, 24, 60, A_CENTER, icon);
     float th = d.empty() ? 60 : 24;
     text(F_BOLD, TEXT, c.x + 50, d.empty() ? y : y + 9, c.w - 64, th, A_LEFT, t);
-    if (!d.empty()) text(F_SMALL, SOFT, c.x + 50, y + 31, c.w - 64, 20, A_LEFT, d);
-    c.y += h + 6;
-    return y;
+    if (!d.empty()) text(F_SMALL, SOFT, c.x + 50, y + 31, c.w - 64, 20 + more, A_WRAP, d);
+    c.y += h + more + 6;
+    return y + more;
 }
 static void switch_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, volatile LONG &v)
 {
     float y = card_row(c, icon, t, d);
-    if (toggle(c.x + c.w - 58, y + 18, v != 0)) set(v, !v);
+    if (toggle(c.x + c.w - 58, y + 18 - card_more / 2, v != 0)) set(v, !v);
 }
 static void slider_row(Col &c, const wchar_t *icon, int id, const std::wstring &t, const std::wstring &value, const std::wstring &d, volatile LONG &v, int lo, int hi, int def)
 {
     float y = card_row(c, icon, t, d, d.empty() ? 80 : 88);
-    text(F_BOLD, ACCENT_HI, c.x + c.w - 190, y + 9, 176, 24, A_RIGHT, value);
+    text(F_BOLD, ACCENT_HI, c.x + c.w - 190, card_top + 9, 176, 24, A_RIGHT, value);
     int n = slider(id, c.x + 44, y + (d.empty() ? 46.f : 55.f), c.w - 58, lo, hi, def, v);
     if (gui.changed) InterlockedExchange(&v, n);
     if (gui.released) tuning_save();
@@ -393,7 +397,7 @@ static void render_card(Col &c, bool numbers)
     else if (ask && step == ALLOW_FAILED) hint = fmt(tr(L"이 모니터에서 켜지 못했어요 (%ls). NVIDIA 제어판의 G-SYNC가 켜져 있는지 봐 주세요", L"Could not turn it on (%ls). Is G-SYNC on in the NVIDIA Control Panel?"), why.c_str());
     else if (ask) hint = tr(L"드라이버가 이 모니터에서는 꺼 두었어요. 켤 때 화면이 1~2초 꺼질 수 있어요", L"Off in the driver for this monitor. The screen may go black for 1-2 s");
     else if (alone) hint = tr(L"다른 프로그램은 켜져 있어서 전체 화면이나 알림 때 화면이 까매질 수 있어요. 켜 보세요", L"On in other programs: the screen may go black in full screen or on notifications");
-    else if (want && !active && !changed) hint = allowed == 1 ? app.fullscreen ? L"" : tr(L"준비됐어요. 전체 화면에서 동작해요", L"Ready. It works in full screen") : tr(L"아직 동작하지 않아요. NVIDIA 제어판 > G-SYNC 설정도 확인해 주세요", L"Not active yet. Check NVIDIA Control Panel > Set up G-SYNC");
+    else if (want && !active && !changed) hint = allowed == 1 ? app.fullscreen ? L"" : tr(L"준비됐어요. 전체 화면에서 작동해요", L"Ready. It works in full screen") : tr(L"아직 작동하지 않아요. NVIDIA 제어판 > G-SYNC 설정도 확인해 주세요", L"Not active yet. Check NVIDIA Control Panel > Set up G-SYNC");
     int rows = numbers ? 4 : 3;
     float h = 46 + (float)rows * 44 + (hint.empty() ? 0.f : 44.f) + (changed ? 44.f : 0.f) + ((ask && step != ALLOW_BUSY) || alone ? 44.f : 0.f), y = c.y;
     box(c.x, y, c.w, h, 10, CARD, EDGE);
@@ -420,7 +424,7 @@ static void render_card(Col &c, bool numbers)
     }
     y += 44;
     name(tr(L"G-SYNC 호환", L"G-SYNC compatible"));
-    text(F_BODY, active && want ? ACCENT_HI : SOFT, c.x + c.w - 14 - 44 - 100, y, 92, 36, A_RIGHT, active && want ? tr(L"동작 중", L"Active") : want ? tr(L"켬", L"On") : tr(L"끔", L"Off"));
+    text(F_BODY, active && want ? ACCENT_HI : SOFT, c.x + c.w - 14 - 44 - 100, y, 92, 36, A_RIGHT, active && want ? tr(L"작동 중", L"Active") : want ? tr(L"켬", L"On") : tr(L"끔", L"Off"));
     if (toggle(c.x + c.w - 58, y + 6, want) && nvidia && step != ALLOW_BUSY)
     {
         bool on = !want;
@@ -539,7 +543,7 @@ static void multiplier(Col &c)
     const ModelInfo *info = model_by_id(tune.model);
     int target = (int)(1000.0 / std::max(5.0, num.interval.get()) + 0.5) * (int)tune.mult;
     bool over = info->multi && tune.mult > 2 && num.hz_mhz && target > num.hz_mhz / 1000 + 5;
-    int m = segment_row(c, L"\xE916", tr(L"배수", L"Multiplier"), !info->multi ? std::wstring(tr(L"이 모델은 2배만 돼요", L"This model supports 2x only")) : over ? fmt(tr(L"%d fps는 모니터(%ld Hz)보다 많아요", L"%d fps is above the monitor (%ld Hz)"), target, num.hz_mhz / 1000) : std::wstring(tr(L"원본 한 장을 몇 장으로 늘릴지", L"Frames shown per source frame")),
+    int m = segment_row(c, L"\xE916", tr(L"배수", L"Multiplier"), !info->multi ? std::wstring(tr(L"이 모델은 2배만 돼요", L"This model supports 2x only")) : over ? fmt(tr(L"%d fps는 모니터(%ld Hz)보다 많아요", L"%d fps is above the monitor (%ld Hz)"), target, num.hz_mhz / 1000) : std::wstring(tr(L"원본 프레임을 몇 배로 늘릴지", L"Frames shown per source frame")),
                         {tr(L"2배", L"2x"), tr(L"3배", L"3x"), tr(L"4배", L"4x")}, info->multi ? (int)tune.mult - 2 : 0, info->multi ? 1 << 30 : 1);
     if (m >= 0) set(tune.mult, m + 2);
 }
@@ -555,7 +559,7 @@ static void record_row(Col &c)
         if (rec_dropped() > 0) say += fmt(tr(L" · 빠짐 %lld", L" · left out %lld"), rec_dropped());
     }
     else if (!e.empty()) say = e;
-    else say = tr(L"보이는 화면 그대로 (만든 프레임과 소리 포함) · Ctrl+Alt+R", L"What you see, made frames and sound included · Ctrl+Alt+R");
+    else say = tr(L"보이는 화면 그대로 (생성 프레임·소리 포함) · Ctrl+Alt+R", L"What you see, made frames and sound included · Ctrl+Alt+R");
     float y = card_row(c, on ? L"\xE7C8" : L"\xE714", tr(L"녹화", L"Record"), L"", 88);
     text(F_SMALL, on ? ACCENT_HI : !e.empty() ? AMBER : SOFT, c.x + 50, y + 58, c.w - 64, 20, A_LEFT, say); // a line of its own under the buttons
     if (button(c.x + c.w - 196, y + 13, 90, 34, on ? tr(L"멈추기", L"Stop") : tr(L"시작", L"Start"), on)) app_video_record(!on);
@@ -585,7 +589,7 @@ static bool nr_row(Col &c)
     else if (!there) say = tr(L"게임에 들어 있는 NVIDIA 파일이 필요해요", L"Needs an NVIDIA file from a game");
     else if (!on) say = tr(L"게임 화면을 실사 느낌으로 (RTX 50)", L"Neural rendering (RTX 50)");
     else if (!e.empty()) say = fmt(tr(L"쓸 수 없어요: %hs", L"Not available: %hs"), e.c_str());
-    else say = one > 0 ? fmt(tr(L"동작 중 · %.1f ms", L"Active · %.1f ms"), one) : std::wstring(tr(L"준비 중", L"Loading"));
+    else say = one > 0 ? fmt(tr(L"작동 중 · %.1f ms", L"Active · %.1f ms"), one) : std::wstring(tr(L"준비 중", L"Loading"));
     float y = card_row(c, L"\xE793", tr(L"DLSS 5", L"DLSS 5"), say, on ? 176.f : 60.f);
     if (on)
     {
@@ -611,7 +615,7 @@ static bool nr_row(Col &c)
         if (gui.changed) InterlockedExchange(&tune.nr_skin, n);
         if (gui.released) tuning_save();
     }
-    if (there <= 0 || !toggle(c.x + c.w - 58, y + 18, tune.nr != 0)) return false;
+    if (there <= 0 || !toggle(c.x + c.w - 58, y + 18 - card_more / 2, tune.nr != 0)) return false;
     set(tune.nr, !tune.nr);
     gui.mode = MOVE;
     repaint_all();
@@ -621,8 +625,8 @@ static bool nr_row(Col &c)
 static bool hdr_row(Col &c)
 {
     bool on = num.hdr == 2;
-    float y = card_row(c, L"\xE706", L"HDR", hdr_busy() ? tr(L"바꾸고 있어요. 화면이 잠깐 꺼져요", L"Changing. The screen may go black briefly") : on && num.hdr_out ? fmt(tr(L"동작 중 · 최대 %ld nit", L"Active · peak %ld nits"), num.hdr_peak) : on ? std::wstring(tr(L"Windows HDR만 켜져 있어요", L"Only Windows HDR is on")) : std::wstring(tr(L"켤 때 화면이 1~2초 꺼질 수 있어요", L"The screen may go black for 1-2 s")));
-    if (!toggle(c.x + c.w - 58, y + 18, on && tune.hdr) || hdr_busy()) return false;
+    float y = card_row(c, L"\xE706", L"HDR", hdr_busy() ? tr(L"바꾸고 있어요. 화면이 잠깐 꺼져요", L"Changing. The screen may go black briefly") : on && num.hdr_out ? fmt(tr(L"작동 중 · 최대 %ld nit", L"Active · peak %ld nits"), num.hdr_peak) : on ? std::wstring(tr(L"Windows HDR만 켜져 있어요", L"Only Windows HDR is on")) : std::wstring(tr(L"켤 때 화면이 1~2초 꺼질 수 있어요", L"The screen may go black for 1-2 s")));
+    if (!toggle(c.x + c.w - 58, y + 18 - card_more / 2, on && tune.hdr) || hdr_busy()) return false;
     bool want = !(on && tune.hdr);
     set(tune.hdr, want);
     if (want && !on) { ini_set(L"hdr_ours", 1); hdr_set(app.window, true); }
@@ -684,11 +688,11 @@ static void page_home(Col &c)
     if (!app.problem.empty())
     {
         note(c, app.problem, 2, AMBER);
-        if (button(c.x, c.y, c.w, 36, tr(L"캡처카드 다시 찾기", L"Search for the capture card again"))) { app_refresh_devices(); app_open(); }
+        if (button(c.x, c.y, c.w, 36, tr(L"캡처보드 다시 찾기", L"Search for the capture card again"))) { app_refresh_devices(); app_open(); }
         c.y += 44;
     }
     const wchar_t *n[4] = {tr(L"초저지연", L"Instant"), tr(L"저지연", L"Fast"), tr(L"균형", L"Balanced"), tr(L"화질 우선", L"Quality")}, *ic[4] = {L"\xE945", L"\xEC4A", L"\xE9F5", L"\xE7B3"};
-    const wchar_t *a[4] = {tr(L"반응이 가장 빨라요 · 아래쪽은 덜 정확해요", L"Fastest response, bottom less exact"), tr(L"반응이 빠르고 덜 깨져요", L"Fast response, fewer artifacts"), tr(L"반응과 화질을 모두 챙겨요 (권장)", L"Good response and quality (default)"), tr(L"움직임이 가장 부드러워요 · 반응은 느려요", L"Smoothest motion, slower response")};
+    const wchar_t *a[4] = {tr(L"입력 지연이 가장 짧아요 · 화면 아래쪽은 덜 정확해요", L"Fastest response, bottom less exact"), tr(L"지연이 짧고 화면 깨짐이 적어요", L"Fast response, fewer artifacts"), tr(L"지연과 화질의 균형 (권장)", L"Good response and quality (default)"), tr(L"움직임이 가장 부드러워요 · 지연은 늘어요", L"Smoothest motion, slower response")};
     int now = preset_now();
     float w = (c.w - 24) / 4;
     mark(MK_PRESETS, c.x, c.y, c.w, 84);
@@ -703,7 +707,7 @@ static void page_home(Col &c)
     }
     c.y += 90;
     bool waits = tune.model == 100, early = preset_early[now >= 0 ? now : 2] && (tune.mult > 2 || waits); // these do not start early
-    text(F_SMALL, SOFT, c.x, c.y, c.w, 22, A_CENTER, waits ? std::wstring(tr(L"이 모델은 원본을 바로 보여 줘요", L"This model shows source frames at once")) : early ? std::wstring(tr(L"2배에서만 더 빨라져요", L"Faster with 2x only")) : now >= 0 ? std::wstring(a[now]) : std::wstring(tr(L"직접 고른 설정", L"Custom settings")));
+    text(F_SMALL, SOFT, c.x, c.y, c.w, 22, A_CENTER, waits ? std::wstring(tr(L"이 모델은 원본을 바로 보여 줘요", L"This model shows source frames at once")) : early ? std::wstring(tr(L"2배에서만 더 빨라져요", L"Faster with 2x only")) : now >= 0 ? std::wstring(a[now]) : std::wstring(tr(L"사용자 설정", L"Custom settings")));
     c.y += 30;
     float my = c.y;
     model_card(c);
@@ -749,36 +753,36 @@ static void model_rows(Col &c)
     if (num.engine_state == -1 && tune.on)
     {
         std::string why = video_engine_error();
-        note(c, fmt(tr(L"쓸 수 없는 까닭: %hs", L"Reason: %hs"), why.c_str()), 2, AMBER);
+        note(c, fmt(tr(L"사용 불가 이유: %hs", L"Reason: %hs"), why.c_str()), 2, AMBER);
     }
     c.y += 4;
 }
 static void page_generate(Col &c)
 {
     float y = card_row(c, L"\xE945", tr(L"프레임 생성", L"Frame generation"), app_status_line());
-    if (toggle(c.x + c.w - 58, y + 18, tune.on != 0)) app_generation(!tune.on);
+    if (toggle(c.x + c.w - 58, y + 18 - card_more / 2, tune.on != 0)) app_generation(!tune.on);
     model_rows(c);
     multiplier(c);
     heading(c, tr(L"지연", L"Latency"));
     double refresh = num.hz_mhz ? 1000000.0 / num.hz_mhz : 0, share = num.share.get();
-    slider_row(c, L"\xE916", 10, tr(L"만든 장면 표시", L"Generated frame time"), share > 0 ? fmt(L"%ld%% · %.1f ms%ls", tune.share, share, tune.sync && refresh > share ? tr(L" (<1주기)", L" (<1 refresh)") : L"") : fmt(L"%ld%%", tune.share), tr(L"짧으면 지연이 줄고 길면 움직임이 고르게 보여요", L"Shorter: less latency. Longer: smoother"), tune.share, 20, 50, 25);
-    slider_row(c, L"\xE81C", 11, tr(L"여유 시간", L"Safety margin"), fmt(L"%.1f ms", tune.margin_x10 / 10.0), tr(L"늘리면 덜 튀고 줄이면 지연이 짧아져요", L"Higher: steadier. Lower: less latency"), tune.margin_x10, 0, 30, 1);
+    slider_row(c, L"\xE916", 10, tr(L"생성 프레임 표시 시간", L"Generated frame time"), share > 0 ? fmt(L"%ld%% · %.1f ms%ls", tune.share, share, tune.sync && refresh > share ? tr(L" (<1주기)", L" (<1 refresh)") : L"") : fmt(L"%ld%%", tune.share), tr(L"짧으면 지연이 줄고 길면 움직임이 고르게 보여요", L"Shorter: less latency. Longer: smoother"), tune.share, 20, 50, 25);
+    slider_row(c, L"\xE81C", 11, tr(L"여유 시간", L"Safety margin"), fmt(L"%.1f ms", tune.margin_x10 / 10.0), tr(L"늘리면 끊김이 줄고, 줄이면 지연이 짧아져요", L"Higher: steadier. Lower: less latency"), tune.margin_x10, 0, 30, 1);
     int e = segment_row(c, L"\xE945", tr(L"선행 생성", L"Start early"), num.ahead.get() > 50 ? tr(L"작동 중 · 화면 아래쪽 일부는 예측해서 채워요", L"Active. The bottom part is estimated") : tr(L"프레임이 다 들어오기 전에 생성을 시작해 지연을 줄여요", L"Starts before the full frame arrives"), {tr(L"끔", L"Off"), tr(L"약", L"Low"), tr(L"강", L"High")}, tune.early);
     if (e >= 0) set(tune.early, e);
-    heading(c, tr(L"만든 장면 보호", L"Protecting made frames"));
-    switch_row(c, L"\xE7B5", tr(L"HUD 보호", L"HUD protection"), tr(L"고정된 글자를 지켜요. 글자 창이 깨지면 끄세요", L"Keeps fixed HUD and text steady"), tune.hud);
-    switch_row(c, L"\xE8D2", tr(L"글자 보호", L"Text protection"), tr(L"자막·안내 글자가 뜬 직후부터 지켜요", L"Protects subtitles as soon as they appear"), tune.text);
-    switch_row(c, L"\xE77B", tr(L"얼굴·움직임 보호 (시험)", L"Face and motion fix (trial)"), tr(L"앞뒤 원본의 움직임과 어긋난 곳을 고쳐요", L"Fixes areas that do not match the motion"), tune.repair);
-    slider_row(c, L"\xE8B2", 12, tr(L"장면 전환 감지", L"Scene cut detection"), tune.cut ? fmt(L"%ld", tune.cut) : tr(L"끔", L"Off"), tr(L"컷에서 섞여 보이면 줄이세요", L"Lower it if scene cuts look blended"), tune.cut, 0, 96, 40);
+    heading(c, tr(L"생성 프레임 보호", L"Protecting made frames"));
+    switch_row(c, L"\xE7B5", tr(L"HUD 보호", L"HUD protection"), tr(L"고정된 HUD가 일그러지지 않게 해요. 대화창이 깨지면 끄세요", L"Keeps fixed HUD and text steady"), tune.hud);
+    switch_row(c, L"\xE8D2", tr(L"글자 보호", L"Text protection"), tr(L"자막·안내 문구가 뜨자마자 보호해요", L"Protects subtitles as soon as they appear"), tune.text);
+    switch_row(c, L"\xE77B", tr(L"얼굴·움직임 보정 (실험)", L"Face and motion fix (trial)"), tr(L"생성 프레임에서 움직임이 어긋난 부분을 바로잡아요", L"Fixes areas that do not match the motion"), tune.repair);
+    slider_row(c, L"\xE8B2", 12, tr(L"장면 전환 감지", L"Scene cut detection"), tune.cut ? fmt(L"%ld", tune.cut) : tr(L"끔", L"Off"), tr(L"장면이 바뀔 때 겹쳐 보이면 값을 낮추세요", L"Lower it if scene cuts look blended"), tune.cut, 0, 96, 40);
     heading(c, L"RIFE");
-    int f = segment_row(c, L"\xE7C2", tr(L"RIFE 움직임 계산 크기", L"RIFE motion size"), tr(L"작을수록 빨라요. 자동은 컴퓨터에 맞춰 바꿔요", L"Smaller is faster. Auto adapts to this PC"), {tr(L"자동", L"Auto"), L"1/2", L"1/4", L"1/8"}, tune.flow);
+    int f = segment_row(c, L"\xE7C2", tr(L"RIFE 모션 계산 해상도", L"RIFE motion size"), tr(L"낮을수록 빨라요. 자동은 PC 성능에 맞춰 정해요", L"Smaller is faster. Auto adapts to this PC"), {tr(L"자동", L"Auto"), L"1/2", L"1/4", L"1/8"}, tune.flow);
     if (f >= 0) set(tune.flow, f);
 }
 static void page_picture(Col &c)
 {
     heading(c, tr(L"선명도", L"Sharpness"));
     slider_row(c, L"\xE7B3", 13, tr(L"선명도", L"Sharpness"), tune.sharpen ? fmt(L"%ld%%", tune.sharpen) : tr(L"끔", L"Off"), L"", tune.sharpen, 0, 100, -1);
-    switch_row(c, L"\xE7A9", tr(L"만든 장면만 선명하게", L"Sharpen generated frames only"), tr(L"원본은 그대로 두고 보정해요", L"Source frames stay untouched"), tune.sharpen_made);
+    switch_row(c, L"\xE7A9", tr(L"생성 프레임만 샤프닝", L"Sharpen generated frames only"), tr(L"원본 프레임은 그대로 두고 생성 프레임만 보정해요", L"Source frames stay untouched"), tune.sharpen_made);
     heading(c, tr(L"색", L"Color"));
     int f = segment_row(c, L"\xE790", tr(L"색 범위", L"Color range"), tr(L"검은색이 뜨거나 뭉개지면 바꿔 보세요", L"Change it if black looks gray or crushed"), {tr(L"자동", L"Automatic"), tr(L"제한", L"Limited"), tr(L"전체", L"Full")}, tune.range == 0 ? 0 : tune.range == 2 ? 1 : 2);
     if (f >= 0) set(tune.range, f == 0 ? 0 : f == 1 ? 2 : 1);
@@ -793,7 +797,7 @@ static void page_picture(Col &c)
             int look = -1;
             for (int i = 0; i < 4; i++)
                 if (tune.nr_layers == looks[i][0] && tune.nr_power == looks[i][1] && tune.nr_detail == looks[i][2] && tune.nr_tone == looks[i][3] && tune.nr_keep == looks[i][4] && tune.nr_style == looks[i][5]) look = i;
-            int k = segment_row(c, L"\xE735", tr(L"미리 고른 느낌", L"Preset"), look < 0 ? tr(L"직접 고른 설정", L"Custom settings") : tr(L"아래에서 하나씩 바꿀 수 있어요", L"Fine-tune it below"), {tr(L"약하게", L"Light"), tr(L"실사", L"Real"), tr(L"아주 실사", L"Strong"), tr(L"선명", L"Vivid")}, look);
+            int k = segment_row(c, L"\xE735", tr(L"프리셋", L"Preset"), look < 0 ? tr(L"사용자 설정", L"Custom settings") : tr(L"아래에서 세부 조정할 수 있어요", L"Fine-tune it below"), {tr(L"약하게", L"Light"), tr(L"실사", L"Real"), tr(L"아주 실사", L"Strong"), tr(L"선명", L"Vivid")}, look);
             if (k >= 0)
             {
                 tune.nr_layers = looks[k][0];
@@ -808,15 +812,15 @@ static void page_picture(Col &c)
             slider_row(c, L"\xE7B3", 15, tr(L"디테일", L"Detail"), fmt(L"%ld%%", tune.nr_detail), tr(L"옷감·피부·바닥의 질감", L"Texture of cloth, skin and ground"), tune.nr_detail, 0, 200, 100);
             slider_row(c, L"\xE706", 16, tr(L"명암", L"Light"), fmt(L"%ld%%", tune.nr_tone), tr(L"어두워 보이면 줄이세요", L"Lower it if it looks too dark"), tune.nr_tone, 0, 200, 100);
             slider_row(c, L"\xE790", 17, tr(L"원래 색 유지", L"Keep original color"), fmt(L"%ld%%", tune.nr_keep), tr(L"색이 이상하면 늘리세요", L"Raise it if colors look wrong"), tune.nr_keep, 0, 100, 0);
-            k = segment_row(c, L"\xE790", tr(L"느낌", L"Style"), L"", {tr(L"기본", L"Default"), tr(L"자연", L"Natural"), tr(L"영화", L"Cinematic")}, tune.nr_style);
+            k = segment_row(c, L"\xE790", tr(L"스타일", L"Style"), L"", {tr(L"기본", L"Default"), tr(L"자연", L"Natural"), tr(L"영화", L"Cinematic")}, tune.nr_style);
             if (k >= 0) set(tune.nr_style, k);
-            k = segment_row(c, L"\xE7C2", tr(L"계산 크기", L"Processing size"), tr(L"작을수록 빨라요. 선명함은 원본을 써요", L"Smaller is faster. Sharpness is kept"), {tr(L"빠름", L"Fast"), tr(L"보통", L"Normal"), tr(L"원본", L"Full")}, tune.nr_size);
+            k = segment_row(c, L"\xE7C2", tr(L"처리 해상도", L"Processing size"), tr(L"낮을수록 빨라요. 디테일은 원본 해상도로 살려요", L"Smaller is faster. Sharpness is kept"), {tr(L"빠름", L"Fast"), tr(L"보통", L"Normal"), tr(L"원본", L"Full")}, tune.nr_size);
             if (k >= 0) set(tune.nr_size, k);
-            k = segment_row(c, L"\xE8CB", tr(L"적용 순서", L"Order"), tune.nr_order ? tr(L"원본에 먼저 바르고 그걸로 만들어요 움직임이 크면 깜빡일 수 있어요", L"Applied to the originals, then frames are made from them. May flicker in fast motion")
-                                                                                     : tr(L"그림을 먼저 만들고 변화를 위에 얹어요. 깜빡임이 가장 적어요", L"Frames are made first and the change is laid over them. Least flicker"),
+            k = segment_row(c, L"\xE8CB", tr(L"적용 순서", L"Order"), tune.nr_order ? tr(L"원본 프레임에 먼저 적용한 뒤 생성해요. 움직임이 크면 깜빡일 수 있어요", L"Applied to the originals, then frames are made from them. May flicker in fast motion")
+                                                                                     : tr(L"프레임을 먼저 생성한 뒤 적용해요. 깜빡임이 가장 적어요", L"Frames are made first and the change is laid over them. Least flicker"),
                             {tr(L"생성 뒤 (기본)", L"After (default)"), tr(L"생성 전", L"Before")}, tune.nr_order);
             if (k >= 0) set(tune.nr_order, k);
-            slider_row(c, L"\xE9F5", 22, tr(L"깜빡임 억제", L"Flicker reduction"), fmt(L"%ld%%", tune.nr_steady), tr(L"높을수록 질감이 덜 떨려요. 너무 높으면 움직일 때 잔상이 남아요", L"Higher: steadier texture. Too high: trails in motion"), tune.nr_steady, 0, 95, 90);
+            slider_row(c, L"\xE9F5", 22, tr(L"깜빡임 억제", L"Flicker reduction"), fmt(L"%ld%%", tune.nr_steady), tr(L"높을수록 질감 떨림이 줄어요. 너무 높으면 움직일 때 잔상이 생겨요", L"Higher: steadier texture. Too high: trails in motion"), tune.nr_steady, 0, 95, 90);
         }
         static std::wstring bad;
         if (!bad.empty()) note(c, bad, 2, AMBER);
@@ -836,7 +840,7 @@ static void page_picture(Col &c)
             return;
         }
         c.y += 46;
-        note(c, tr(L"이 파일은 프쏙에 들어 있지 않아요. 켜면 선행 생성은 작동하지 않아요. 고정된 HUD는 원래 색을 지켜요", L"The file is not included. Start early does not work with it. A fixed HUD keeps its colors"), 2);
+        note(c, tr(L"이 파일은 프쏙에 들어 있지 않아요. 켜면 선행 생성은 꺼져요. 고정된 HUD는 원래 색을 유지해요", L"The file is not included. Start early does not work with it. A fixed HUD keeps its colors"), 2);
     }
 }
 // A row with a field that shows the chosen value; a click opens the list (the system's own menu). The index chosen, or -1.
@@ -891,7 +895,7 @@ static std::wstring kind_name(Pixel p)
     {
     case Pixel::nv12: return tr(L"NV12 (가장 빨라요)", L"NV12 (fastest)");
     case Pixel::p010: return L"P010 (10bit)";
-    case Pixel::mjpg: return tr(L"MJPG (압축, USB 카드)", L"MJPG (compressed, USB cards)");
+    case Pixel::mjpg: return tr(L"MJPG (압축, USB 캡처보드)", L"MJPG (compressed, USB cards)");
     default: return std::wstring(pixel_name(p), pixel_name(p) + strlen(pixel_name(p)));
     }
 }
@@ -908,7 +912,7 @@ static void page_input(Col &c)
 {
     bool reopen = false;
     // ---- the card ----
-    heading(c, tr(L"캡처카드", L"Capture card"));
+    heading(c, tr(L"캡처보드", L"Capture card"));
     {
         std::vector<std::wstring> names;
         int now = -1;
@@ -929,7 +933,7 @@ static void page_input(Col &c)
             return;
         }
     }
-    if (button(c.x, c.y, c.w, 36, tr(L"카드 다시 찾기", L"Search for cards again"), false, true, L"\xE72C")) { app_refresh_devices(); app_open(); return; }
+    if (button(c.x, c.y, c.w, 36, tr(L"캡처보드 다시 찾기", L"Search for cards again"), false, true, L"\xE72C")) { app_refresh_devices(); app_open(); return; }
     c.y += 44;
     if (!app.problem.empty()) note(c, app.problem, 2, AMBER);
 
@@ -939,7 +943,7 @@ static void page_input(Col &c)
         if (x.w >= 640 && x.w <= 3840 && x.h <= 2160 && x.pixel != Pixel::none) all.push_back(x);
     auto rate_of = [](const VideoFormat &x) { return std::min(x.fps, 60.0); };
     bool autom = app.want.w == 0;
-    heading(c, tr(L"화면 형식", L"Video format"), autom ? tr(L"자동: 4K 60fps까지 가장 큰 크기", L"Automatic: up to 4K 60") : std::wstring());
+    heading(c, tr(L"화면 형식", L"Video format"), autom ? tr(L"자동: 4K 60fps까지 가장 높은 해상도", L"Automatic: up to 4K 60") : std::wstring());
 
     // kind (decoding)
     std::vector<Pixel> kinds;
@@ -1002,7 +1006,7 @@ static void page_input(Col &c)
             if (r <= top + 0.5) { names.push_back(r == (int)r ? fmt(L"%.0f", r) : fmt(L"%.2f", r)); rates.push_back(r); }
         int now = 0;
         for (size_t k = 1; k < rates.size(); k++) if (app.want_rate && fabs(app.want.fps - rates[k]) < 0.01) now = (int)k;
-        int r = choice_row(c, L"\xE916", tr(L"초당 장수 (FPS)", L"Frame rate (FPS)"), names, now);
+        int r = choice_row(c, L"\xE916", tr(L"프레임 레이트 (FPS)", L"Frame rate (FPS)"), names, now);
         if (r >= 0 && r != now && f.w)
         {
             app.want = f;
@@ -1020,24 +1024,24 @@ static void page_input(Col &c)
     ULONGLONG t = GetTickCount64();
     if (t - seen_at > 4000) { seen_at = t; seen_n = num.captured; rate = 0; }
     else if (t - seen_at > 2000) { rate = (double)(num.captured - seen_n) * 1000.0 / (double)(t - seen_at); seen_at = t; seen_n = num.captured; }
-    if (!app.current.w || (rate == 0 && num.captured == 0)) note(c, tr(L"신호가 없어요. 게임기와 케이블, 카드의 입력을 확인해 주세요", L"No signal. Check the console, the cable and the card's input"), 2, AMBER);
+    if (!app.current.w || (rate == 0 && num.captured == 0)) note(c, tr(L"신호가 없어요. 콘솔 전원, HDMI 케이블, 캡처보드 입력을 확인해 주세요", L"No signal. Check the console, the cable and the card's input"), 2, AMBER);
     else
     {
-        note(c, fmt(tr(L"받는 중 %d×%d · %.2f fps · %hs · 소리 %ls", L"Receiving %d×%d · %.2f fps · %hs · sound %ls"), app.current.w, app.current.h, app.current.fps, pixel_name(app.current.pixel),
+        note(c, fmt(tr(L"입력 중 %d×%d · %.2f fps · %hs · 소리 %ls", L"Receiving %d×%d · %.2f fps · %hs · sound %ls"), app.current.w, app.current.h, app.current.fps, pixel_name(app.current.pixel),
                     app.audio.rate ? fmt(L"%d Hz", app.audio.rate).c_str() : tr(L"없음", L"none")));
-        if (rate > 1) note(c, fmt(tr(L"카드가 실제로 보내는 장수: 초당 %.1f장", L"Pictures the card really sends: %.1f per second"), rate));
+        if (rate > 1) note(c, fmt(tr(L"실제 입력: %.1f fps", L"Pictures the card really sends: %.1f per second"), rate));
     }
     if (app.current.pixel == Pixel::mjpg) note(c, fmt(tr(L"MJPEG를 푸는 데 %.1f ms (%ls). 선행 생성은 쓸 수 없어요", L"MJPEG decoding: %.1f ms (%ls). Start early is not available"), Mjpeg::last_ms(), Mjpeg::with()), 2, Mjpeg::last_ms() > 0.8 * 1000 / std::max(10.0, app.current.fps) ? AMBER : SOFT);
     if (rate > 10 && app.current.fps > 10 && fabs(rate / app.current.fps - 1) > 0.04)
     {
         // a USB 2.0 card (or port): it announces 60 but sends what the bus allows; generation still doubles it
         bool usb2 = app.current.pixel == Pixel::mjpg && rate < app.current.fps * 0.6;
-        note(c, usb2 ? fmt(tr(L"이 카드는 %.0f fps로 열었지만 초당 %.1f장만 보내요. USB 2.0 카드이거나 USB 2.0 포트에 꽂혀 있어요. 파란색 USB 3.0 포트에 꽂아 보세요. 그대로도 프레임 생성으로 2배가 돼요",
+        note(c, usb2 ? fmt(tr(L"%.0f fps로 열었지만 실제로는 %.1f fps만 들어와요. USB 2.0 캡처보드이거나 USB 2.0 포트에 꽂혀 있어요. 파란색 USB 3.0 포트에 꽂아 보세요. 지금 상태로도 프레임 생성으로 2배가 돼요",
                                      L"Opened at %.0f fps, but the card sends %.1f per second: a USB 2.0 card or port. Try a blue USB 3.0 port. Generation still doubles it"), app.current.fps, rate)
-                     : fmt(tr(L"카드가 %.0f fps로 열렸지만 초당 %.1f장을 보내요. 신호와 맞는 속도(보통 60)를 고르면 화면을 바로바로 받아요", L"Opened at %.0f fps, but the card sends %.1f per second. Choose the rate of the signal (usually 60)"), app.current.fps, rate),
+                     : fmt(tr(L"%.0f fps로 열렸지만 실제 입력은 %.1f fps예요. 입력 신호에 맞는 FPS(보통 60)를 고르면 지연 없이 받아요", L"Opened at %.0f fps, but the card sends %.1f per second. Choose the rate of the signal (usually 60)"), app.current.fps, rate),
              3, AMBER);
     }
-    note(c, tr(L"다른 프로그램이 카드를 다른 크기로 먼저 열어 두면 8~33 ms 늦게 받아요", L"If another program opened the card at another size first, frames arrive 8-33 ms later"), 2);
+    note(c, tr(L"다른 프로그램이 캡처보드를 다른 해상도로 먼저 열어 두면 8~33 ms 늦게 들어와요", L"If another program opened the card at another size first, frames arrive 8-33 ms later"), 2);
     if (reopen) { tuning_save(); app_open(); }
 }
 static void flag_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, bool &v, void (*then)() = nullptr);
@@ -1051,28 +1055,28 @@ static void page_screen(Col &c)
     if (s >= 0) set(tune.fit, s);
     heading(c, tr(L"동기화", L"Sync"));
     render_card(c, false);
-    note(c, tr(L"수직: 찢어짐 없음, 지연 3 ms쯤 늘어요. 가변·끔: 지연이 짧아요. 프레임 대기는 수직에서만 쓰여요", L"V-Sync: no tearing, about 3 ms slower. VRR and Off: low latency. The frame queue is used with V-Sync only"), 2);
+    note(c, tr(L"수직 동기화: 화면 찢어짐 없음, 지연 약 3 ms 증가. 가변·끔: 지연이 짧아요. 최대 프레임 대기는 수직 동기화에서만 적용돼요", L"V-Sync: no tearing, about 3 ms slower. VRR and Off: low latency. The frame queue is used with V-Sync only"), 2);
     if (num.hdr > 0)
     {
         heading(c, L"HDR");
         if (hdr_row(c)) return;
-        slider_row(c, L"\xE706", 18, tr(L"기본 밝기", L"Base brightness"), fmt(L"%ld nit", tune.hdr_white), tr(L"보통 흰색의 밝기", L"Brightness of ordinary white"), tune.hdr_white, 80, 400, 200);
-        slider_row(c, L"\xE793", 19, tr(L"하이라이트", L"Highlights"), fmt(L"%ld%%", tune.hdr_boost), tr(L"햇빛·불빛을 얼마나 밝게", L"How bright sunlight and lamps get"), tune.hdr_boost, 0, 100, 50);
-        note(c, tr(L"일반(SDR) 화면을 HDR로 넓혀 보여 줘요. 게임기 HDR을 받을 때는 게임기 색을 그대로 써요", L"Expands a normal (SDR) picture to HDR. A console's HDR picture keeps its own colours"), 2);
+        slider_row(c, L"\xE706", 18, tr(L"기본 밝기", L"Base brightness"), fmt(L"%ld nit", tune.hdr_white), tr(L"기본 흰색 밝기 (SDR 화이트)", L"Brightness of ordinary white"), tune.hdr_white, 80, 400, 200);
+        slider_row(c, L"\xE793", 19, tr(L"하이라이트", L"Highlights"), fmt(L"%ld%%", tune.hdr_boost), tr(L"햇빛·조명 같은 밝은 부분의 밝기", L"How bright sunlight and lamps get"), tune.hdr_boost, 0, 100, 50);
+        note(c, tr(L"SDR 화면을 HDR 모니터에 맞게 밝게 보여 줘요", L"Expands a normal (SDR) picture to HDR. A console's HDR picture keeps its own colours"), 2);
     }
     // the console's HDR: the card is opened as P010 (10 bits) and the picture is kept as HDR10 (BT.2020, PQ)
     static bool console_hdr;
     console_hdr = app.want.pixel == Pixel::p010;
-    flag_row(c, L"\xE7F4", tr(L"게임기 HDR 받기", L"Console HDR input"),
-             tr(L"게임기에서 HDR을 켰다면 켜세요. 캡처카드가 일반 화면으로 바꾼 것을 10비트로 받아 색 계단이 줄어요", L"For a console with HDR on: the card's SDR picture in 10 bits, smoother gradients"),
+    flag_row(c, L"\xE7F4", tr(L"콘솔 HDR 입력", L"Console HDR input"),
+             tr(L"콘솔에서 HDR을 켰다면 켜세요. 캡처보드가 SDR로 변환한 영상을 10비트로 받아 색 띠(밴딩)가 줄어요", L"For a console with HDR on: the card's SDR picture in 10 bits, smoother gradients"),
              console_hdr, [] { app.want.pixel = console_hdr ? Pixel::p010 : Pixel::none; app_open(); tuning_save(); });
-    heading(c, tr(L"게임 화면 위 정보", L"On-screen overlay"));
+    heading(c, tr(L"화면 오버레이 (OSD)", L"On-screen overlay"));
     s = segment_row(c, L"\xE9D9", tr(L"표시", L"Show"), L"", {tr(L"끔", L"Off"), L"fps", tr(L"지연", L"Latency"), tr(L"전문가", L"Expert")}, tune.osd);
     if (s >= 0) set(tune.osd, s);
     s = segment_row(c, L"\xE744", tr(L"위치", L"Position"), L"", {L"↖", L"↗", L"↙", L"↘"}, tune.corner);
     if (s >= 0) set(tune.corner, s);
     heading(c, tr(L"모니터", L"Monitor"));
-    flag_row(c, L"\xE706", tr(L"모니터 꺼지지 않게", L"Keep the monitor on"), tr(L"게임 신호가 있는 동안만", L"While there is a game signal"), app.awake);
+    flag_row(c, L"\xE706", tr(L"모니터 절전 방지", L"Keep the monitor on"), tr(L"영상이 들어오는 동안만", L"While there is a game signal"), app.awake);
 }
 static const wchar_t *card_name(int i)
 {
@@ -1102,11 +1106,11 @@ static void page_data(Col &c, bool popup)
         for (int i = 0; i < CARDS; i++)
             if (app.cards >> i & 1) { draw_card(i, c.x, c.y, c.w); c.y += CARD_H + GAP; }
     heading(c, tr(L"기록", L"Log"));
-    float y = card_row(c, L"\xE7C8", tr(L"숫자 기록", L"Record data"), tr(L"1초에 한 줄씩 CSV로 (엑셀)", L"One line per second (CSV)"));
+    float y = card_row(c, L"\xE7C8", tr(L"데이터 기록", L"Record data"), tr(L"1초에 한 줄씩 CSV로 (엑셀)", L"One line per second (CSV)"));
     if (button(c.x + c.w - 104, y + 13, 90, 34, app.recording ? tr(L"멈추기", L"Stop") : tr(L"시작", L"Start"), app.recording)) app_record(!app.recording);
     if (button(c.x, c.y, c.w, 36, tr(L"기록 폴더", L"Open folder"), false, true, L"\xE838")) ShellExecuteW(nullptr, L"open", data_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     c.y += 46;
-    note(c, tr(L"컴퓨터 숫자는 보일 때만 1초에 한 번, 가장 낮은 우선순위로 읽어요. 화면 처리와 나뉘어 있어 지연과 화질에 영향이 없어요", L"System data is read once per second at the lowest priority, and only while it is shown"), 3);
+    note(c, tr(L"PC 정보는 화면에 보일 때만 1초에 한 번, 가장 낮은 우선순위로 읽어요. 영상 처리와 분리되어 있어 지연과 화질에 영향이 없어요", L"System data is read once per second at the lowest priority, and only while it is shown"), 3);
 }
 static void toggle_data()
 {
@@ -1118,7 +1122,7 @@ static void toggle_data()
 static void flag_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, bool &v, void (*then)())
 {
     float y = card_row(c, icon, t, d);
-    if (!toggle(c.x + c.w - 58, y + 18, v)) return;
+    if (!toggle(c.x + c.w - 58, y + 18 - card_more / 2, v)) return;
     v = !v;
     tuning_save();
     gui.mode = MOVE; // used up
@@ -1134,7 +1138,7 @@ static void names_again() // after a change of the language
 }
 static void hotkey_row(Col &c)
 {
-    float y = card_row(c, L"\xE765", tr(L"켜고 끄는 단축키", L"On/off shortcut"), app.hot_ok || app.hot_capture ? tr(L"다른 창에서도 동작해요", L"Works in other windows too") : tr(L"다른 프로그램이 쓰고 있어요", L"In use by another program"), 102);
+    float y = card_row(c, L"\xE765", tr(L"프레임 생성 단축키", L"On/off shortcut"), app.hot_ok || app.hot_capture ? tr(L"다른 창을 보고 있어도 작동해요", L"Works in other windows too") : tr(L"다른 프로그램이 쓰고 있어요", L"In use by another program"), 102);
     if (button(c.x + 14, y + 58, c.w - 28, 34, app.hot_capture ? tr(L"누르세요…", L"Press keys…") : app_hotkey_name(), app.hot_capture)) { app.hot_capture = true; app_hotkey(); }
 }
 static void page_settings(Col &c)
@@ -1142,16 +1146,16 @@ static void page_settings(Col &c)
     heading(c, tr(L"언어와 모양", L"Language and appearance"));
     int s = segment_row(c, L"\xF2B7", tr(L"언어", L"Language"), tr(L"자동: Windows에서 쓰는 언어", L"Automatic: Windows language"), {tr(L"자동", L"Automatic"), L"한국어", L"English"}, (int)app_language);
     if (s >= 0) { set(app_language, s); gui.mode = MOVE; names_again(); return; }
-    flag_row(c, L"\xE7C4", tr(L"창 배경 비치기", L"Transparent window"), tr(L"바탕화면이 흐리게 비쳐 보여요", L"Shows the blurred desktop behind"), app.see_through);
+    flag_row(c, L"\xE7C4", tr(L"창 반투명 효과", L"Transparent window"), tr(L"바탕화면이 흐리게 비쳐 보여요", L"Shows the blurred desktop behind"), app.see_through);
     flag_row(c, L"\xE840", tr(L"창을 항상 위에", L"Always on top"), tr(L"다른 창을 써도 가려지지 않아요", L"Stays above other windows"), app.topmost, app_topmost);
-    heading(c, tr(L"켤 때", L"On startup"));
+    heading(c, tr(L"시작 설정", L"On startup"));
     float y = card_row(c, L"\xE7E8", tr(L"Windows와 함께 켜기", L"Start with Windows"), tr(L"로그인하면 자동으로 켜져요", L"After you sign in"));
     static int autostart = -1;
     if (autostart < 0) autostart = app_autostart();
-    if (toggle(c.x + c.w - 58, y + 18, autostart > 0)) { app_autostart(autostart <= 0); autostart = app_autostart(); gui.mode = MOVE; repaint_all(); return; }
-    s = segment_row(c, L"\xE945", tr(L"프레임 생성", L"Frame generation"), L"", {tr(L"지난번처럼", L"Last used"), tr(L"켬", L"On"), tr(L"끔", L"Off")}, app.start_on);
+    if (toggle(c.x + c.w - 58, y + 18 - card_more / 2, autostart > 0)) { app_autostart(autostart <= 0); autostart = app_autostart(); gui.mode = MOVE; repaint_all(); return; }
+    s = segment_row(c, L"\xE945", tr(L"프레임 생성", L"Frame generation"), L"", {tr(L"마지막 상태로", L"Last used"), tr(L"켬", L"On"), tr(L"끔", L"Off")}, app.start_on);
     if (s >= 0) { app.start_on = s; tuning_save(); }
-    s = segment_row(c, L"\xE740", tr(L"화면", L"Display"), L"", {tr(L"지난번처럼", L"Last used"), tr(L"전체 화면", L"Full screen"), tr(L"창", L"Window")}, app.start_full);
+    s = segment_row(c, L"\xE740", tr(L"화면", L"Display"), L"", {tr(L"마지막 상태로", L"Last used"), tr(L"전체 화면", L"Full screen"), tr(L"창", L"Window")}, app.start_full);
     if (s >= 0) { app.start_full = s; tuning_save(); }
     heading(c, tr(L"단축키", L"Shortcuts"));
     hotkey_row(c);
@@ -1159,7 +1163,7 @@ static void page_settings(Col &c)
     heading(c, tr(L"파일과 초기화", L"Files and reset"));
     float w = (c.w - 6) / 2;
     if (button(c.x, c.y, w, 36, tr(L"설정·기록 폴더", L"Open data folder"), false, true, L"\xE838")) { gui.mode = MOVE; ShellExecuteW(nullptr, L"open", data_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
-    if (button(c.x + w + 6, c.y, w, 36, tr(L"처음 설정으로", L"Reset settings"), false, !bench_running && vrr_allow_now(*std::make_unique<std::wstring>()) != ALLOW_BUSY, L"\xE72C"))
+    if (button(c.x + w + 6, c.y, w, 36, tr(L"전체 초기화", L"Reset settings"), false, !bench_running && vrr_allow_now(*std::make_unique<std::wstring>()) != ALLOW_BUSY, L"\xE72C"))
     {
         gui.mode = MOVE;
         if (MessageBoxW(ui_open() ? ui_window : app.window, tr(L"모든 설정을 처음 상태로 되돌릴까요?\n\n테마 파일과 기록, 벤치마크 결과는 지우지 않아요.", L"Reset all settings?\n\nTheme files, logs and benchmark results are kept."), app_name(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES)
@@ -1186,19 +1190,19 @@ static void page_sound(Col &c)
 {
     heading(c, tr(L"소리", L"Sound"));
     volume_row(c);
-    flag_row(c, L"\xE767", tr(L"캡처카드 소리 켜기", L"Capture card sound"), tr(L"게임기에 헤드셋을 쓰면 끄세요", L"Turn off with a console headset"), app.sound, app_open);
-    slider_row(c, L"\xE916", 30, tr(L"소리 늦추기", L"Sound delay"), fmt(L"%ld ms", audio_delay), tr(L"소리가 화면보다 빠르게 들리면 늘리세요", L"Raise it if the sound comes before the picture"), audio_delay, 0, 300, 0);
+    flag_row(c, L"\xE767", tr(L"캡처보드 소리 켜기", L"Capture card sound"), tr(L"콘솔에 헤드셋을 연결했다면 끄세요", L"Turn off with a console headset"), app.sound, app_open);
+    slider_row(c, L"\xE916", 30, tr(L"오디오 싱크 (지연)", L"Sound delay"), fmt(L"%ld ms", audio_delay), tr(L"소리가 화면보다 먼저 들리면 늘리세요", L"Raise it if the sound comes before the picture"), audio_delay, 0, 300, 0);
     double lat = app.signal ? num.latency.get() : 0;
     if (lat > 1 && button(c.x, c.y, c.w, 36, fmt(tr(L"화면 지연에 맞추기 (%.0f ms)", L"Match the picture's delay (%.0f ms)"), lat), false, true, L"\xE916"))
         set(audio_delay, (int)std::lround(std::min(300.0, lat)));
     if (lat > 1) c.y += 44;
-    heading(c, tr(L"받는 소리", L"Sound coming in"));
-    if (!app.sound) note(c, tr(L"캡처카드 소리가 꺼져 있어요", L"The card's sound is off"), 1, AMBER);
-    else if (!app.audio.rate) note(c, tr(L"이 카드에서 소리를 찾지 못했어요. 다른 카드를 쓰거나 카드의 오디오 입력을 확인해 주세요", L"No sound found on this card. Check the card's audio input"), 2, AMBER);
+    heading(c, tr(L"오디오 입력", L"Sound coming in"));
+    if (!app.sound) note(c, tr(L"캡처보드 소리가 꺼져 있어요", L"The card's sound is off"), 1, AMBER);
+    else if (!app.audio.rate) note(c, tr(L"이 캡처보드에서 소리를 찾지 못했어요. 캡처보드의 오디오 입력을 확인해 주세요", L"No sound found on this card. Check the card's audio input"), 2, AMBER);
     else
     {
         note(c, fmt(tr(L"%d Hz · %d채널 · %d비트", L"%d Hz · %d channels · %d bit"), app.audio.rate, app.audio.channels, app.audio.bits));
-        note(c, fmt(tr(L"기다리는 소리 %.0f ms · 끊김 %lld번", L"Sound waiting %.0f ms · gaps %lld"), audio_buffer_ms(), (long long)audio_gaps));
+        note(c, fmt(tr(L"오디오 버퍼 %.0f ms · 끊김 %lld번", L"Sound waiting %.0f ms · gaps %lld"), audio_buffer_ms(), (long long)audio_gaps));
     }
     note(c, tr(L"M 음소거 · ↑↓ 소리 크기", L"M mute · Up/Down volume"));
 }
@@ -1235,14 +1239,14 @@ static void page_record(Col &c)
     record_row(c);
     bool on = rec_on();
     if (on) note(c, tr(L"아래 설정은 다음 녹화부터 적용돼요", L"Changes below apply to the next recording"), 1, AMBER);
-    int k = segment_row(c, L"\xE7F4", tr(L"담을 화면", L"What to record"), tr(L"보이는 그대로는 만든 프레임까지 들어가요", L"As shown includes the made frames"), {tr(L"보이는 그대로", L"As shown"), tr(L"원본만", L"Originals only")}, rec_made ? 0 : 1);
+    int k = segment_row(c, L"\xE7F4", tr(L"녹화 대상", L"What to record"), tr(L"보이는 그대로를 고르면 생성 프레임까지 녹화돼요", L"As shown includes the made frames"), {tr(L"보이는 그대로", L"As shown"), tr(L"원본만", L"Originals only")}, rec_made ? 0 : 1);
     if (k >= 0) set(rec_made, k == 0);
     k = segment_row(c, L"\xE790", tr(L"코덱", L"Codec"), tr(L"HEVC가 같은 크기에 더 깨끗해요. 안 열리는 곳이 있으면 H.264", L"HEVC is cleaner for its size; H.264 plays everywhere"), {tr(L"자동", L"Automatic"), L"HEVC", L"H.264"}, (int)rec_codec_pref);
     if (k >= 0) set(rec_codec_pref, k);
     int mb4k[3] = {48, 80, 128};
     k = segment_row(c, L"\xE7B3", tr(L"화질", L"Quality"), fmt(tr(L"4K 60fps HEVC 기준 약 %d Mbps", L"About %d Mbps for 4K 60 HEVC"), mb4k[std::min(2L, std::max(0L, (LONG)rec_quality))]), {tr(L"작게", L"Smaller"), tr(L"보통", L"Normal"), tr(L"높게", L"High")}, (int)rec_quality);
     if (k >= 0) set(rec_quality, k);
-    switch_row(c, L"\xE767", tr(L"소리 넣기", L"Include sound"), tr(L"캡처카드 소리를 AAC로 함께 저장", L"The card's sound as AAC"), rec_sound);
+    switch_row(c, L"\xE767", tr(L"소리 넣기", L"Include sound"), tr(L"캡처보드 소리를 AAC로 함께 저장", L"The card's sound as AAC"), rec_sound);
     // where the files go
     std::wstring dir = rec_folder();
     float y = card_row(c, L"\xE838", tr(L"폴더", L"Folder"), L"", 92);
@@ -1259,7 +1263,7 @@ static void page_record(Col &c)
     if (button(c.x + c.w - 102, y + 13, 88, 34, tr(L"열기", L"Open"))) ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     std::wstring last = rec_file();
     if (!last.empty()) note(c, fmt(tr(L"마지막 파일: %ls", L"Last file: %ls"), last.c_str()), 2);
-    note(c, tr(L"위쪽 녹화 버튼(전체 화면 버튼 옆)이나 Ctrl+Alt+R로도 시작하고 멈출 수 있어요. 그래픽카드 인코더를 써서 지연에 영향이 없어요", L"The record button at the top (beside full screen) or Ctrl+Alt+R start and stop it too. The graphics card's encoder is used, so latency does not change"), 2);
+    note(c, tr(L"위쪽 녹화 버튼(전체 화면 버튼 옆)이나 Ctrl+Alt+R로도 시작·정지할 수 있어요. 그래픽카드 인코더를 써서 지연에 영향이 없어요", L"The record button at the top (beside full screen) or Ctrl+Alt+R start and stop it too. The graphics card's encoder is used, so latency does not change"), 2);
 }
 static float panel_width();
 // ---- user guide: the window goes dark, one place at a time is lit and explained (Next / Back / Skip) ----
@@ -1271,10 +1275,10 @@ static int guide = -1;   // the step shown, -1: none
 struct GuideStep { int page, mark; const wchar_t *t_ko, *t_en, *b_ko, *b_en; };
 static const GuideStep guide_steps[] = {
     {P_HOME, M_NONE, L"프쏙에 오신 걸 환영해요", L"Welcome to PEUSSOK",
-     L"캡처카드로 받은 게임 화면의 프레임을 늘려서 더 부드럽게 보여 줘요. 30fps 게임은 60fps 이상으로 보여요.\n\n중요한 곳만 짧게 둘러볼게요.",
+     L"캡처보드로 받은 게임 화면의 프레임을 늘려서 더 부드럽게 보여 줘요. 30fps 게임은 60fps 이상으로 보여요.\n\n중요한 곳만 짧게 둘러볼게요.",
      L"PEUSSOK shows your capture card's game picture with more frames: a 30 fps game looks like 60 fps or more.\n\nA short tour of the important places."},
-    {P_INPUT, M_DEVICE, L"1. 캡처카드 고르기", L"1. Choose the capture card",
-     L"게임기가 연결된 캡처카드를 고르세요. 형식·해상도·초당 장수는 '자동'이 가장 좋아요.", L"Choose the card your console is connected to. Leave format, resolution and frame rate on Automatic."},
+    {P_INPUT, M_DEVICE, L"1. 캡처보드 고르기", L"1. Choose the capture card",
+     L"콘솔이 연결된 캡처보드를 고르세요. 형식·해상도·초당 장수는 '자동'이 가장 좋아요.", L"Choose the card your console is connected to. Leave format, resolution and frame rate on Automatic."},
     {P_HOME, M_POWER, L"2. 켜고 끄기", L"2. On and off",
      L"가운데 원을 누르면 프레임 생성이 켜지고 꺼져요. 원 안에 보이는 fps와 원본 fps가 나와요.", L"Click the circle to switch frame generation on or off. It shows the frames you see and the source frames."},
     {P_HOME, M_PRESETS, L"3. 반응과 화질 고르기", L"3. Response or quality",
@@ -1502,7 +1506,7 @@ static void draw_card(int id, float x, float y, float w)
         float top = history_top(H_SHOWN, 30) * 1.05f;
         spark(H_SHOWN, hx, y + 32, hw, 34, ACCENT, top);
         spark(H_SOURCE, hx, y + 32, hw, 34, SKY, top, false);
-        facts(ix, y + 72, iw, {{tr(L"원본", L"Source"), live ? fmt(L"%.1f fps", app_source_fps()) : L"—"}, {tr(L"만든 장면", L"Generated"), gen ? fmt(tr(L"%.1f장/초", L"%.1f / s"), app_made_fps() * (double)(model_by_id(tune.model)->multi ? tune.mult - 1 : 1)) : L"—"}, {tr(L"하위 1%", L"1% low"), live && p99 > 0 ? fmt(L"%.0f fps", 1000.0 / p99) : L"—"}});
+        facts(ix, y + 72, iw, {{tr(L"원본", L"Source"), live ? fmt(L"%.1f fps", app_source_fps()) : L"—"}, {tr(L"생성 프레임", L"Generated"), gen ? fmt(tr(L"%.1f fps", L"%.1f / s"), app_made_fps() * (double)(model_by_id(tune.model)->multi ? tune.mult - 1 : 1)) : L"—"}, {tr(L"하위 1%", L"1% low"), live && p99 > 0 ? fmt(L"%.0f fps", 1000.0 / p99) : L"—"}});
         break;
     }
     case CARD_LATENCY:
@@ -1520,7 +1524,7 @@ static void draw_card(int id, float x, float y, float w)
                 fill(a, y + 76, std::max(0.f, ix + iw * (float)(at / total) - a - 1), 9, step_color_of(i));
             }
         text(F_SMALL, SOFT, ix, y + 90, iw, 20, A_LEFT, gen ? fmt(tr(L"변환 %.1f 생성 %.1f HUD %.1f 표시 %.1f", L"In %.1f · gen %.1f · HUD %.1f · show %.1f"), v[0], v[1], v[2], v[4]) : L"");
-        text(F_SMALL, SOFT, ix, y + 110, iw, 20, A_LEFT, live ? fmt(tr(L"최대 %.1f ms (도착→내보냄)", L"Max %.1f ms (arrival→present)"), peak_ms) : L"");
+        text(F_SMALL, SOFT, ix, y + 110, iw, 20, A_LEFT, live ? fmt(tr(L"최대 %.1f ms (입력→출력)", L"Max %.1f ms (arrival→present)"), peak_ms) : L"");
         break;
     }
     case CARD_PACE:
@@ -1539,17 +1543,17 @@ static void draw_card(int id, float x, float y, float w)
                 fill(ix + (float)i * 4, y + 106 - bh, 3, bh, r & RING_MADE ? ACCENT : fade(SKY, 170));
             }
         text(F_SMALL, SOFT, ix, y + 110, iw, 20, A_LEFT, live ? fmt(tr(L"평균 %.2f · 최장 1%% %.2f ms", L"Avg %.2f · worst 1%% %.2f ms"), avg, p99) : L"");
-        text(F_SMALL, ACCENT, x + w - 150, y + 6, 70, 24, A_RIGHT, h ? L"" : tr(L"만든", L"Gen"));
+        text(F_SMALL, ACCENT, x + w - 150, y + 6, 70, 24, A_RIGHT, h ? L"" : tr(L"생성", L"Gen"));
         text(F_SMALL, SKY, x + w - 76, y + 6, 62, 24, A_RIGHT, h ? L"" : tr(L"원본", L"Source"));
         break;
     }
     case CARD_GEN:
     {
         double made = num.sources > 0 ? 100.0 * (double)(num.sources - num.skipped) / (double)num.sources : 0;
-        big(gen ? fmt(L"%.1f", made) : L"—", tr(L"% 제때", L"% on time"));
+        big(gen ? fmt(L"%.1f", made) : L"—", tr(L"% 정시", L"% on time"));
         std::wstring model = model_by_id(tune.model)->name;
         if (num.flow) model += fmt(L" 1/%d", num.flow == 1 ? 2 : num.flow == 2 ? 4 : 8);
-        facts(ix, y + 72, iw, {{tr(L"모델", L"Model"), model + fmt(tr(L" · %ld배", L" · %ldx"), tune.mult)}, {tr(L"한 장 만들기", L"Per frame"), gen ? fmt(L"%.2f ms", num.generate.get()) : L"—"}, {tr(L"건너뜀·늦음·버림", L"Skip·late·drop"), fmt(L"%lld · %lld · %lld", (long long)num.skipped, (long long)num.late, (long long)num.dropped)}});
+        facts(ix, y + 72, iw, {{tr(L"모델", L"Model"), model + fmt(tr(L" · %ld배", L" · %ldx"), tune.mult)}, {tr(L"생성 시간", L"Per frame"), gen ? fmt(L"%.2f ms", num.generate.get()) : L"—"}, {tr(L"건너뜀·늦음·버림", L"Skip·late·drop"), fmt(L"%lld · %lld · %lld", (long long)num.skipped, (long long)num.late, (long long)num.dropped)}});
         break;
     }
     case CARD_QUALITY:
@@ -1566,7 +1570,7 @@ static void draw_card(int id, float x, float y, float w)
         for (auto &d : app.devices)
             if (d.path == app.device) name = d.name;
         text(F_BOLD, TEXT, ix, y + 28, iw, 26, A_LEFT, name.empty() ? L"—" : name);
-        facts(ix, y + 54, iw, {{tr(L"형식", L"Format"), app.current.w ? fmt(L"%dp %.2f %hs", app.current.h, app.current.fps, pixel_name(app.current.pixel)) : L"—"}, {tr(L"도착 간격", L"Interval"), live ? fmt(L"%.2f ms", num.interval.get()) : L"—"}, {tr(L"같은 화면 반복", L"Repeats"), live ? fmt(L"%.0f%%", app_repeat_percent()) : L"—"}, {tr(L"소리", L"Sound"), fmt(tr(L"%d kHz · %.0f ms · 끊김 %lld", L"%d kHz · %.0f ms · gaps %lld"), app.audio.rate / 1000, audio_buffer_ms(), (long long)audio_gaps)}});
+        facts(ix, y + 54, iw, {{tr(L"형식", L"Format"), app.current.w ? fmt(L"%dp %.2f %hs", app.current.h, app.current.fps, pixel_name(app.current.pixel)) : L"—"}, {tr(L"입력 간격", L"Interval"), live ? fmt(L"%.2f ms", num.interval.get()) : L"—"}, {tr(L"중복 프레임", L"Repeats"), live ? fmt(L"%.0f%%", app_repeat_percent()) : L"—"}, {tr(L"소리", L"Sound"), fmt(tr(L"%d kHz · %.0f ms · 끊김 %lld", L"%d kHz · %.0f ms · gaps %lld"), app.audio.rate / 1000, audio_buffer_ms(), (long long)audio_gaps)}});
         break;
     }
     case CARD_GPU:
@@ -1587,7 +1591,7 @@ static void draw_card(int id, float x, float y, float w)
         break;
     case CARD_SCREEN:
         big(num.hz_mhz ? fmt(L"%ld", num.hz_mhz / 1000) : L"—", L"Hz");
-        facts(ix, y + 72, iw, {{tr(L"모니터", L"Monitor"), app_monitor_name()}, {tr(L"동기화", L"Sync"), tune.sync == 0 ? tr(L"수직 동기화", L"V-Sync") : tune.sync == 1 ? (num.vrr == 0 ? tr(L"가변 (모니터 꺼짐)", L"VRR (monitor off)") : num.vrr == 2 ? tr(L"가변 (동작 중)", L"VRR (active)") : tr(L"가변 (VRR)", L"VRR")) : tr(L"끔", L"Off")}, {tr(L"내보내기", L"Output"), num.composed == 1 ? tr(L"윈도우가 합성 (+지연)", L"Composed (+latency)") : num.composed == 0 ? tr(L"바로 표시", L"Direct") : L"—"}});
+        facts(ix, y + 72, iw, {{tr(L"모니터", L"Monitor"), app_monitor_name()}, {tr(L"동기화", L"Sync"), tune.sync == 0 ? tr(L"수직 동기화", L"V-Sync") : tune.sync == 1 ? (num.vrr == 0 ? tr(L"가변 (모니터 꺼짐)", L"VRR (monitor off)") : num.vrr == 2 ? tr(L"가변 (작동 중)", L"VRR (active)") : tr(L"가변 (VRR)", L"VRR")) : tr(L"끔", L"Off")}, {tr(L"출력 방식", L"Output"), num.composed == 1 ? tr(L"윈도우가 합성 (+지연)", L"Composed (+latency)") : num.composed == 0 ? tr(L"바로 표시", L"Direct") : L"—"}});
         break;
     case CARD_SPEC:
         facts(ix, y + 30, iw, {{L"GPU", si.gpu}, {tr(L"드라이버", L"Driver"), si.driver}, {L"CPU", si.cpu}, {L"RAM", si.ram}, {L"OS", si.os}});
@@ -1630,7 +1634,7 @@ static void draw_bench(float W, float H)
     bool run = bench_running != 0;
     float x = RAIL + 12, w = W - RAIL - 32, y = TOP + 4, bx = x + w;
     text(F_TITLE, TEXT, x + 4, y, 400, 34, A_LEFT, tr(L"컴퓨터 성능 확인", L"Benchmark"));
-    text(F_SMALL, SOFT, x + 4, y + 36, w - 330, 22, A_LEFT, tr(L"60fps 시험 화면을 실제 과정에 넣어 모델마다 시간을 재요. 캡처는 잠시 멈춰요.", L"Runs a 60 fps test image through the real pipeline. Capture pauses meanwhile."));
+    text(F_SMALL, SOFT, x + 4, y + 36, w - 330, 22, A_LEFT, tr(L"60fps 테스트 영상으로 모델별 생성 시간을 측정해요. 측정하는 동안 캡처는 잠시 멈춰요.", L"Runs a 60 fps test image through the real pipeline. Capture pauses meanwhile."));
     if (run) { if (button(bx - 130, y + 10, 130, 42, tr(L"멈추기", L"Stop"), false, true, L"\xE71A")) bench_cancel(); }
     else
     {
@@ -1648,8 +1652,8 @@ static void draw_bench(float W, float H)
     {
         int steps = std::max(1, (int)bench_steps), done = (int)bench_done;
         float pw = cw - 296;
-        text(F_BOLD, ACCENT_HI, sx + 18, y + 10, pw, 26, A_LEFT, tr(L"재는 중", L"Measuring"));
-        text(F_HEAD, TEXT, sx + 18, y + 38, pw, 28, A_LEFT, bench_model_now >= 0 ? fmt(L"%ls · %ls", models[bench_model_now].name, bench_size_name(bench_size_now)) : tr(L"시험 화면 만드는 중", L"Preparing the test image"));
+        text(F_BOLD, ACCENT_HI, sx + 18, y + 10, pw, 26, A_LEFT, tr(L"측정 중", L"Measuring"));
+        text(F_HEAD, TEXT, sx + 18, y + 38, pw, 28, A_LEFT, bench_model_now >= 0 ? fmt(L"%ls · %ls", models[bench_model_now].name, bench_size_name(bench_size_now)) : tr(L"테스트 영상 준비 중", L"Preparing the test image"));
         text(F_SMALL, SOFT, sx + 18, y + 66, pw, 22, A_LEFT, fmt(L"%d / %d", done, steps));
         box(sx + 18, y + 98, pw, 8, 4, ink(255, 255, 255, 30));
         box(sx + 18, y + 98, pw * (float)done / (float)steps, 8, 4, ACCENT);
@@ -1660,9 +1664,9 @@ static void draw_bench(float W, float H)
         text(F_SMALL, SOFT, sx + 18, y + 10, 120, 22, A_LEFT, tr(L"점수", L"Score"));
         text(F_HUGE, ACCENT_HI, sx + 18, y + 28, 190, 60, A_LEFT, fmt(L"%d", r.score));
         text(F_SMALL, SOFT, sx + 18, y + 92, 180, 20, A_LEFT, r.when + (r.full ? L"" : tr(L" · 빠르게", L" · quick")) + (r.game ? tr(L" · 게임 화면", L" · game") : L""));
-        text(F_SMALL, SOFT, sx + 18, y + 112, 190, 40, A_WRAP, tr(L"FSR 3와 RIFE 4.6이 1초에\n만드는 장수로 셈해요", L"Based on frames per second\nof FSR 3 and RIFE 4.6"));
+        text(F_SMALL, SOFT, sx + 18, y + 112, 190, 40, A_WRAP, tr(L"FSR 3·RIFE 4.6의 초당\n생성 프레임 수로 계산해요", L"Based on frames per second\nof FSR 3 and RIFE 4.6"));
         float rx = sx + 214, rw = cw - 230;
-        text(F_SMALL, SOFT, rx, y + 10, rw, 22, A_LEFT, tr(L"권하는 설정", L"Recommended"));
+        text(F_SMALL, SOFT, rx, y + 10, rw, 22, A_LEFT, tr(L"추천 설정", L"Recommended"));
         if (r.best_model >= 0)
         {
             const BenchCell &b = r.cell[r.best_model][r.best_size];
@@ -1674,15 +1678,15 @@ static void draw_bench(float W, float H)
         else text(F_BODY, AMBER, rx, y + 34, rw, 70, A_WRAP, tr(L"60fps를 2배로 만들 수 있는 모델이 없어요. 해상도를 낮추거나 30fps 게임에서 써 보세요.", L"No model can do 2x at 60 fps on this PC. Try a lower resolution or 30 fps games."));
         if (button(rx + 132, y + 110, 124, 34, tr(L"결과 파일", L"Open results"), false, true, L"\xE8A5")) ShellExecuteW(nullptr, L"open", (data_dir() + L"\\benchmark.txt").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
-    else text(F_BODY, SOFT, sx + 18, y + 20, cw - 36, 110, A_WRAP, tr(L"아직 잰 적이 없어요. 위의 \"빠르게\"나 \"전체\"를 누르면 모델마다 쓸 수 있는지, 몇 배까지 되는지, 어떤 해상도가 알맞은지 알려 줘요.", L"Not measured yet. Press Quick or Full to see which models work, up to which multiplier, and at which resolution."));
+    else text(F_BODY, SOFT, sx + 18, y + 20, cw - 36, 110, A_WRAP, tr(L"아직 측정 기록이 없어요. 위의 \"빠르게\"나 \"전체\"를 누르면 모델별 사용 가능 여부, 최대 배수, 알맞은 해상도를 알려 줘요.", L"Not measured yet. Press Quick or Full to see which models work, up to which multiplier, and at which resolution."));
     y += ch + 12;
     int rows = std::max(1, r.models);
     float head = 66, rh = std::min(62.f, std::max(40.f, (H - y - 18 - head - 32) / (float)rows));
     box(x, y, w, head + rh * (float)rows + 34, 12, CARD, EDGE);
-    text(F_BOLD, TEXT, x + 18, y + 6, 160, 34, A_LEFT, tr(L"게임의 프레임", L"Game frame rate"));
+    text(F_BOLD, TEXT, x + 18, y + 6, 160, 34, A_LEFT, tr(L"게임 프레임", L"Game frame rate"));
     int s = segments(x + 146, y + 8, 252, 32, {L"30 fps", L"60 fps", L"120 fps"}, bench_fps == 30 ? 0 : bench_fps == 60 ? 1 : 2);
     if (s >= 0) bench_fps = s == 0 ? 30 : s == 1 ? 60 : 120;
-    text(F_SMALL, SOFT, x + 410, y + 8, w - 428, 32, A_RIGHT, tr(L"최대 배수 · 한 장 만드는 시간 · 60fps 2배 예상 지연", L"Max multiplier · time per frame · latency at 60 fps 2x"));
+    text(F_SMALL, SOFT, x + 410, y + 8, w - 428, 32, A_RIGHT, tr(L"최대 배수 · 프레임당 생성 시간 · 60fps 2배 예상 지연", L"Max multiplier · time per frame · latency at 60 fps 2x"));
     float nx = x + 18, nw = w * 0.22f, lw = w * 0.17f, colw = (w - nw - 36 - lw) / 3;
     const wchar_t *hs[3] = {L"1080p", L"1440p", L"4K"};
     for (int i = 0; i < 3; i++) text(F_SMALL, SOFT, nx + nw + (float)i * colw, y + 42, colw, 22, A_LEFT, hs[i]);
@@ -1702,15 +1706,15 @@ static void draw_bench(float W, float H)
             if (c.state == 1)
             {
                 int k = cell_mult(c);
-                text(F_BOLD, mult_color(k), cx, ry + rh / 2 - 22, colw - 8, 24, A_LEFT, k >= 2 ? fmt(tr(L"%d배 · %d fps", L"%dx · %d fps"), k, k * bench_fps) : std::wstring(tr(L"어려움", L"Too slow")));
+                text(F_BOLD, mult_color(k), cx, ry + rh / 2 - 22, colw - 8, 24, A_LEFT, k >= 2 ? fmt(tr(L"%d배 · %d fps", L"%dx · %d fps"), k, k * bench_fps) : std::wstring(tr(L"불가", L"Too slow")));
                 text(F_SMALL, SOFT, cx, ry + rh / 2, colw - 8, 20, A_LEFT, fmt(L"%.2f ms%ls · %.1f ms", (double)c.gen, c.flow == 2 ? L" (1/4)" : c.flow == 3 ? L" (1/8)" : L"", (double)c.latency));
             }
-            else text(F_SMALL, DIM, cx, ry, colw - 8, rh, A_LEFT, c.state == 2 ? tr(L"안 됨", L"Not possible") : now && bench_size_now == i ? tr(L"재는 중…", L"Measuring…") : L"—");
+            else text(F_SMALL, DIM, cx, ry, colw - 8, rh, A_LEFT, c.state == 2 ? tr(L"안 됨", L"Not possible") : now && bench_size_now == i ? tr(L"측정 중…", L"Measuring…") : L"—");
         }
         int best = r.valid ? bench_recommended_size(r, m) : -1;
         text(F_BOLD, best >= 0 ? TEXT : DIM, nx + nw + 3 * colw, ry, lw, rh, A_LEFT, best >= 0 ? bench_size_name(best) : r.valid ? tr(L"없음", L"None") : L"—");
     }
-    text(F_SMALL, SOFT, x + 18, y + head + (float)rows * rh + 4, w - 36, 26, A_LEFT, tr(L"1/4·1/8은 RIFE가 움직임을 더 작게 계산한 결과예요. 배수는 95% 기준 시간으로 셈했고, 모니터 주사율을 넘는 배수는 보이지 않아요.", L"1/4 and 1/8: RIFE with a smaller motion size. Multipliers use the 95% time. Rates above the monitor refresh are not visible."));
+    text(F_SMALL, SOFT, x + 18, y + head + (float)rows * rh + 4, w - 36, 26, A_LEFT, tr(L"1/4·1/8은 RIFE 모션 계산 해상도를 낮춘 결과예요. 배수는 상위 95% 생성 시간 기준이고, 모니터 주사율을 넘는 배수는 표시하지 않아요.", L"1/4 and 1/8: RIFE with a smaller motion size. Multipliers use the 95% time. Rates above the monitor refresh are not visible."));
 }
 
 // ---- program window ----

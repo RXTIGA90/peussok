@@ -176,7 +176,7 @@ void app_open()
     if (app.devices.empty()) app_refresh_devices();
     capture.close();
     video_no_signal();
-    if (app.device.empty()) { app.problem = tr(L"캡처카드를 찾지 못했어요", L"No capture card found"); return; }
+    if (app.device.empty()) { app.problem = tr(L"캡처보드를 찾지 못했어요", L"No capture card found"); return; }
     VideoFormat want = app.want;
     app.problem = capture.open(app.device, want, app.sound, &sink);
     app.formats = capture.formats;
@@ -347,7 +347,7 @@ std::wstring app_status_line()
 {
     wchar_t t[256];
     if (!app.problem.empty()) return app.problem;
-    if (!app.signal) return tr(L"화면 신호를 기다리는 중", L"Waiting for a signal");
+    if (!app.signal) return tr(L"입력 신호 대기 중", L"Waiting for a signal");
     if (!tune.on) swprintf(t, 256, tr(L"꺼짐 · 원본 %.0f fps", L"Off · source %.0f fps"), source_fps);
     else if (num.engine_state == 1) swprintf(t, 256, tr(L"%ls 준비 중", L"Loading %ls"), model_by_id(tune.model)->name);
     else if (num.too_slow) swprintf(t, 256, tr(L"%ls은(는) 이 컴퓨터에서 느려요", L"%ls is too slow here"), model_by_id(tune.model)->name);
@@ -368,7 +368,7 @@ static void update_label()
         text = line;
         if (tune.osd >= 2)
         {
-            swprintf(line, 200, tr(L"\n지연 %.1f ms (도착→화면)", L"\nlatency %.1f ms (arrival→screen)"), num.latency.get());
+            swprintf(line, 200, tr(L"\n지연 %.1f ms (입력→출력)", L"\nlatency %.1f ms (arrival→screen)"), num.latency.get());
             text += line;
             if (tune.on && num.engine_state == 2)
             {

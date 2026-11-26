@@ -16,6 +16,7 @@ bool d_begin(HDC mem, const RECT &paint, int dpi); // paint: pixels of the windo
 void d_end();
 void d_text(Font f, Ink c, float x, float y, float w, float h, Align a, const std::wstring &s);
 float d_width(Font f, const std::wstring &s);
+float d_height(Font f, const std::wstring &s, float w); // of the text wrapped into w
 void d_box(float x, float y, float w, float h, float radius, Ink fill, Ink line = 0, float width = 1);
 void d_fill(float x, float y, float w, float h, Ink c);
 void d_circle(float cx, float cy, float r, Ink fill, Ink line = 0, float width = 1);

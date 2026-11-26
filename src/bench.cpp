@@ -445,7 +445,7 @@ std::wstring bench_text(const BenchResult &r)
     wchar_t t[256];
     auto add = [&](const wchar_t *f, auto... a) { swprintf(t, 256, f, a...); o += t; };
     add(L"%ls %ls  %ls  %ls\r\n", app_name(), APP_VERSION, tr(L"벤치마크", L"benchmark"), r.when.c_str());
-    add(L"%ls\r\n", r.game ? tr(L"시험 화면  게임 녹화", L"Test picture  game recording") : tr(L"시험 화면  만든 그림", L"Test picture  drawn"));
+    add(L"%ls\r\n", r.game ? tr(L"테스트 영상  게임 녹화", L"Test picture  game recording") : tr(L"테스트 영상  합성 이미지", L"Test picture  drawn"));
     add(L"GPU  %ls (%ls)\r\nCPU  %ls\r\nRAM  %ls\r\n%ls  %d\r\n\r\n", r.gpu.c_str(), r.driver.c_str(), r.cpu.c_str(), r.ram.c_str(), tr(L"점수", L"Score"), r.score);
     for (int s = 0; s < BENCH_SIZES; s++)
     {
@@ -457,7 +457,7 @@ std::wstring bench_text(const BenchResult &r)
         {
             const BenchCell &c = r.cell[m][s];
             if (c.state == 1)
-                add(tr(L"%-16ls 만드는 시간 %.2f ms (95%% %.2f) · 초당 %.0f장 · 60fps %d배 · 30fps %d배 · 120fps %d배 · 예상 지연 %.1f ms · 못 만듦 %d/%d%ls\r\n",
+                add(tr(L"%-16ls 생성 시간 %.2f ms (95%% %.2f) · %.0f fps · 60fps %d배 · 30fps %d배 · 120fps %d배 · 예상 지연 %.1f ms · 실패 %d/%d%ls\r\n",
                        L"%-16ls made in %.2f ms (95%% %.2f) · %.0f a second · 60 fps %dx · 30 fps %dx · 120 fps %dx · latency %.1f ms · missed %d/%d%ls\r\n"),
                     model_by_id(r.model_id[m])->name, (double)c.gen, (double)c.gen95, (double)c.max_fps, c.mult60, c.mult30, c.mult120, (double)c.latency, c.missed, c.frames, c.flow == 2 ? L" · 1/4" : c.flow == 3 ? L" · 1/8" : L"");
             else

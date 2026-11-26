@@ -151,7 +151,7 @@ int guard_main(const wchar_t *cmd)
         starts[count++ % 16] = now;
         if (recent >= 8) // without generation too: nothing more to try
         {
-            std::wstring say = std::wstring(tr(L"프쏙이 계속 멈춰서 닫았어요.\n캡처카드와 그래픽 드라이버를 확인해 주세요.\n\n기록: ", L"PEUSSOK kept stopping, so it was closed.\nPlease check the capture card and the graphics driver.\n\nLog: ")) + data_dir() + L"\\app.log";
+            std::wstring say = std::wstring(tr(L"프쏙이 계속 멈춰서 닫았어요.\n캡처보드와 그래픽 드라이버를 확인해 주세요.\n\n기록: ", L"PEUSSOK kept stopping, so it was closed.\nPlease check the capture card and the graphics driver.\n\nLog: ")) + data_dir() + L"\\app.log";
             MessageBoxW(nullptr, say.c_str(), app_name(), MB_OK | MB_ICONERROR);
             return (int)code;
         }
