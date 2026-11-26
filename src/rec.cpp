@@ -52,6 +52,8 @@ static std::atomic<long long> pictures{0}, dropped{0};
 static std::wstring file, error, folder_now;
 static const wchar_t *codec = L"";
 static LONGLONG began = 0;
+static std::atomic<bool> paused{false};
+static std::atomic<LONGLONG> paused_at{0}, paused_total{0}; // qpc ticks
 static std::thread worker;
 static int vw, vh;    // size the writer was made for
 static double vfps;   // rate in its header
@@ -81,7 +83,19 @@ std::wstring rec_error() { std::lock_guard<std::mutex> g(m); return error; }
 const wchar_t *rec_codec() { return codec; }
 long long rec_pictures() { return pictures; }
 long long rec_dropped() { return dropped; }
-double rec_seconds() { return running && began ? ms_of(qpc() - began) / 1000.0 : 0; }
+double rec_seconds()
+{
+    if (!running || !began) return 0;
+    LONGLONG now = qpc(), off = paused_total + (paused ? now - paused_at : 0);
+    return std::max(0.0, ms_of(now - began - off) / 1000.0);
+}
+bool rec_paused() { return rec_on() && paused; }
+void rec_pause(bool on)
+{
+    if (!rec_on() || on == paused) return;
+    if (on) { paused_at = qpc(); paused = true; logf("rec: paused"); }
+    else { paused_total += qpc() - paused_at; paused = false; logf("rec: going on"); }
+}
 
 static void writer_loop()
 {
@@ -268,6 +282,8 @@ std::wstring rec_start()
     }
     vw = vh = 0;
     pictures = dropped = 0;
+    paused = false;
+    paused_total = 0;
     af = app.audio;
     want = true;
     worker = std::thread(writer_loop);
@@ -277,6 +293,7 @@ std::wstring rec_start()
 void rec_stop()
 {
     if (!want && !running) return;
+    logf("rec: stop");
     want = false;
     wake.notify_all();
     if (worker.joinable()) worker.join();
@@ -384,6 +401,7 @@ void rec_frame(ID3D11Device *d, ID3D11DeviceContext *c, ID3D11ShaderResourceView
         return;
     }
     if (made && !rec_made) return; // the originals only
+    if (paused) return;
     w &= ~1;
     h &= ~1;
     if (w < 64 || h < 64 || !picture) return;
@@ -399,7 +417,7 @@ void rec_frame(ID3D11Device *d, ID3D11DeviceContext *c, ID3D11ShaderResourceView
         return;
     }
     if (g.dev != d || g.w != w || g.h != h)
-        if (!make(d, w, h)) { want = false; wake.notify_all(); return; }
+        if (!make(d, w, h)) { logf("rec: no copies on the card"); want = false; wake.notify_all(); return; }
     collect(c, false);
     int i = g.next;
     if (g.busy[i]) { dropped++; return; } // the card has not finished the older ones
@@ -421,16 +439,16 @@ void rec_frame(ID3D11Device *d, ID3D11DeviceContext *c, ID3D11ShaderResourceView
     c->PSSetShaderResources(0, 1, &nos);
     c->CopyResource(g.sy[i], g.ty);
     c->CopyResource(g.suv[i], g.tuv);
-    g.when[i] = when;
+    g.when[i] = when - paused_total;
     g.busy[i] = true;
     g.next = (i + 1) % RING;
 }
 void rec_audio(const uint8_t *data, size_t size, const AudioFormat &f, LONGLONG when)
 {
-    if (!running || !size || f.rate != af.rate || f.channels != af.channels || f.bits != af.bits) return;
+    if (!running || paused || !size || f.rate != af.rate || f.channels != af.channels || f.bits != af.bits) return;
     Piece p;
     p.video = false;
-    p.when = when;
+    p.when = when - paused_total;
     p.data.assign(data, data + size);
     {
         std::lock_guard<std::mutex> l(m);

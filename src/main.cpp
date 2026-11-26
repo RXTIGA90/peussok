@@ -229,6 +229,8 @@ void app_hotkey()
     app.hot_ok = app.hot_vk && !app.hot_capture && RegisterHotKey(app.window, 1, (UINT)app.hot_mods | MOD_NOREPEAT, (UINT)app.hot_vk);
     UnregisterHotKey(app.window, 2);
     RegisterHotKey(app.window, 2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'R'); // recording
+    UnregisterHotKey(app.window, 3);
+    RegisterHotKey(app.window, 3, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'P'); // recording: pause / go on
 }
 // Recording the picture on or off; why it could not start is shown on the recording card.
 void app_video_record(bool on)
@@ -504,6 +506,7 @@ static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM a, LPARAM b)
     }
     case WM_HOTKEY:
         if (a == 2) app_video_record(!rec_on());
+        else if (a == 3) { rec_pause(!rec_paused()); InvalidateRect(app.window, nullptr, FALSE); }
         else app_generation(!tune.on);
         return 0;
     case WM_KEYDOWN:

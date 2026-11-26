@@ -14,6 +14,8 @@ void rec_set_folder(const std::wstring &f); // empty: Videos\Peussok
 bool rec_on();                 // recording (or about to start with the next picture)
 std::wstring rec_start();      // empty, or why not
 void rec_stop();
+void rec_pause(bool on);       // pause (nothing is written) or go on in the same file
+bool rec_paused();
 std::wstring rec_file();       // the file being written (or the last one)
 double rec_seconds();          // how long it runs
 long long rec_pictures();      // written so far

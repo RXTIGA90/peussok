@@ -1,4 +1,4 @@
-﻿PEUSSOK 1.0.0
+﻿PEUSSOK 1.0.1
 
 PEUSSOK shows your capture card's console picture more smoothly: it makes new frames between the original ones,
 so a 30 fps game looks like 60 fps or more. No streaming or recording program is needed.
@@ -15,11 +15,11 @@ Best here; NVIDIA VFG downloads NVIDIA's files the first time), multiplier (2x m
 and Find the best settings for this PC.
 Tabs: Generation, Quality, Display (sync, G-SYNC/FreeSync, HDR, on-screen fps), Input, Sound, Record, Data, Theme,
 Benchmark, Settings.
-Recording: the record button beside full screen, or Ctrl+Alt+R. Saves what you see, with sound, as MP4 in Videos\Peussok.
+Recording: the record button beside full screen, or Ctrl+Alt+R. Saves what you see, with sound, as MP4 in Videos\Peussok. Pause and resume in the same file (Ctrl+Alt+P).
 DLSS 5: needs an RTX 50, a current NVIDIA driver and a game with DLSS 5 on this PC (its NVIDIA file is found there).
 
 Keys: F11 / Alt+Enter / double click full screen, Esc close or leave full screen, F1 or right click settings,
-Ctrl+Alt+G generation on/off (any window), G the same in this window, Ctrl+Alt+R record, M mute, Up/Down volume.
+Ctrl+Alt+G generation on/off (any window), G the same in this window, Ctrl+Alt+R record, Ctrl+Alt+P pause/resume recording, M mute, Up/Down volume.
 For the lowest latency: full screen, variable refresh (G-SYNC/FreeSync) on, the Instant preset.
 Console HDR on: switch on Console HDR input in the Display tab (10-bit capture, smoother gradients).
 No picture: choose the card again, close other programs using it, switch HDCP off on the console.

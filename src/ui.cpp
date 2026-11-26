@@ -555,15 +555,21 @@ static void record_row(Col &c)
     if (on)
     {
         int s = (int)rec_seconds();
-        say = fmt(tr(L"\x25CF 녹화 중 %d:%02d · %ls · %lld장", L"\x25CF Recording %d:%02d · %ls · %lld frames"), s / 60, s % 60, rec_codec(), rec_pictures());
+        say = fmt(rec_paused() ? tr(L"\x23F8 일시정지 %d:%02d · %ls · %lld장 · Ctrl+Alt+P로 이어서", L"\x23F8 Paused %d:%02d · %ls · %lld frames · Ctrl+Alt+P goes on")
+                               : tr(L"\x25CF 녹화 중 %d:%02d · %ls · %lld장", L"\x25CF Recording %d:%02d · %ls · %lld frames"), s / 60, s % 60, rec_codec(), rec_pictures());
         if (rec_dropped() > 0) say += fmt(tr(L" · 빠짐 %lld", L" · left out %lld"), rec_dropped());
     }
     else if (!e.empty()) say = e;
     else say = tr(L"보이는 화면 그대로 (생성 프레임·소리 포함) · Ctrl+Alt+R", L"What you see, made frames and sound included · Ctrl+Alt+R");
     float y = card_row(c, on ? L"\xE7C8" : L"\xE714", tr(L"녹화", L"Record"), L"", 88);
     text(F_SMALL, on ? ACCENT_HI : !e.empty() ? AMBER : SOFT, c.x + 50, y + 58, c.w - 64, 20, A_LEFT, say); // a line of its own under the buttons
-    if (button(c.x + c.w - 196, y + 13, 90, 34, on ? tr(L"멈추기", L"Stop") : tr(L"시작", L"Start"), on)) app_video_record(!on);
-    if (button(c.x + c.w - 100, y + 13, 86, 34, tr(L"폴더", L"Folder"))) ShellExecuteW(nullptr, L"open", rec_folder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // the folder has its own card below: here only start, or pause / go on and stop
+    if (!on) { if (button(c.x + c.w - 114, y + 13, 100, 34, tr(L"시작", L"Start"), false)) app_video_record(true); }
+    else
+    {
+        if (button(c.x + c.w - 220, y + 13, 100, 34, rec_paused() ? tr(L"이어서", L"Resume") : tr(L"일시정지", L"Pause"), rec_paused())) { rec_pause(!rec_paused()); repaint_all(); }
+        if (button(c.x + c.w - 114, y + 13, 100, 34, tr(L"정지", L"Stop"), true)) app_video_record(false);
+    }
 }
 static void volume_row(Col &c)
 {
@@ -1159,7 +1165,7 @@ static void page_settings(Col &c)
     if (s >= 0) { app.start_full = s; tuning_save(); }
     heading(c, tr(L"단축키", L"Shortcuts"));
     hotkey_row(c);
-    note(c, tr(L"녹화: Ctrl+Alt+R · F11 전체 화면 · F1 설정 · M 음소거 · ↑↓ 소리", L"Record: Ctrl+Alt+R · F11 full screen · F1 panel · M mute · Up/Down volume"), 2);
+    note(c, tr(L"녹화: Ctrl+Alt+R · 일시정지: Ctrl+Alt+P · F11 전체 화면 · F1 설정 · M 음소거 · ↑↓ 소리", L"Record: Ctrl+Alt+R · F11 full screen · F1 panel · M mute · Up/Down volume"), 2);
     heading(c, tr(L"파일과 초기화", L"Files and reset"));
     float w = (c.w - 6) / 2;
     if (button(c.x, c.y, w, 36, tr(L"설정·기록 폴더", L"Open data folder"), false, true, L"\xE838")) { gui.mode = MOVE; ShellExecuteW(nullptr, L"open", data_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
@@ -1846,8 +1852,8 @@ static void caption(float W)
     text(F_BOLD, TEXT, 60, 0, 120, TOP, A_LEFT, app_name());
     std::wstring s = !app.problem.empty() ? app.problem : app.current.w && app.signal ? fmt(L"%d×%d · %.0f fps · %hs", app.current.w, app.current.h, app.current.fps, pixel_name(app.current.pixel)) : app_status_line();
     bool rec = rec_on();
-    if (rec) s = fmt(tr(L"\x25CF 녹화 중 %d:%02d · ", L"\x25CF Recording %d:%02d · "), (int)rec_seconds() / 60, (int)rec_seconds() % 60) + s;
-    text(F_SMALL, rec ? ink(255, 96, 86) : app.problem.empty() ? SOFT : AMBER, 138, 0, W - 138 - 308, TOP, A_LEFT, s);
+    if (rec) s = fmt(rec_paused() ? tr(L"\x23F8 일시정지 %d:%02d · ", L"\x23F8 Paused %d:%02d · ") : tr(L"\x25CF 녹화 중 %d:%02d · ", L"\x25CF Recording %d:%02d · "), (int)rec_seconds() / 60, (int)rec_seconds() % 60) + s;
+    text(F_SMALL, rec ? ink(255, 96, 86) : app.problem.empty() ? SOFT : AMBER, 138, 0, W - 138 - (rec ? 356 : 308), TOP, A_LEFT, s);
     const wchar_t *g[5] = {rec ? L"\xE71A" : L"\xE7C8", L"\xE740", L"\xE921", IsZoomed(app.window) ? L"\xE923" : L"\xE922", L"\xE8BB"};
     for (int i = 0; i < 5; i++)
     {
@@ -1866,6 +1872,14 @@ static void caption(float W)
             else PostMessageW(app.window, WM_CLOSE, 0, 0);
             return;
         }
+    }
+    if (rec) // while recording: pause / go on, left of the stop button
+    {
+        float x = W - 48.f * 6;
+        bool hov = hot(x, 0, 48, TOP - 8);
+        if (hov) fill(x, 0, 48, TOP - 8, CARD_HI);
+        text(F_ICON, rec_paused() ? ACCENT_HI : ink(255, 96, 86), x, 0, 48, TOP - 8, A_CENTER, rec_paused() ? L"\xE768" : L"\xE769");
+        if (pressed(x, 0, 48, TOP - 8)) { rec_pause(!rec_paused()); gui.mode = MOVE; repaint_all(); }
     }
 }
 static void background(float W, float H, bool see_through)
@@ -2056,7 +2070,7 @@ bool ui_message(HWND w, UINT m, WPARAM a, LPARAM b, LRESULT &r)
         sizes(w, W, H);
         float x = (float)p.x * 96 / (float)dpi, y = (float)p.y * 96 / (float)dpi;
         if (!IsZoomed(w) && y < 6) r = x < 8 ? HTTOPLEFT : x > W - 8 ? HTTOPRIGHT : HTTOP;
-        else if (y < TOP - 6 && x < W - 48 * 5) r = HTCAPTION;
+        else if (y < TOP - 6 && x < W - 48 * (rec_on() ? 6 : 5)) r = HTCAPTION;
         return true;
     }
     }
