@@ -561,8 +561,9 @@ static void record_row(Col &c)
     }
     else if (!e.empty()) say = e;
     else say = tr(L"보이는 화면 그대로 (생성 프레임·소리 포함) · Ctrl+Alt+R", L"What you see, made frames and sound included · Ctrl+Alt+R");
-    float y = card_row(c, on ? L"\xE7C8" : L"\xE714", tr(L"녹화", L"Record"), L"", 88);
-    text(F_SMALL, on ? ACCENT_HI : !e.empty() ? AMBER : SOFT, c.x + 50, y + 58, c.w - 64, 20, A_LEFT, say); // a line of its own under the buttons
+    float more = std::max(0.f, std::ceil(d_height(F_SMALL, say, c.w - 64)) - 21.f); // a long line wraps and the card grows
+    float y = card_row(c, on ? L"\xE7C8" : L"\xE714", tr(L"녹화", L"Record"), L"", 88 + more);
+    text(F_SMALL, on ? ACCENT_HI : !e.empty() ? AMBER : SOFT, c.x + 50, y + 58, c.w - 64, 20 + more, A_WRAP, say); // a line of its own under the buttons
     // the folder has its own card below: here only start, or pause / go on and stop
     if (!on) { if (button(c.x + c.w - 114, y + 13, 100, 34, tr(L"시작", L"Start"), false)) app_video_record(true); }
     else

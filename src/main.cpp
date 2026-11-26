@@ -64,7 +64,8 @@ void tuning_load()
     app.show_panel = ini_int(L"panel", 1) != 0;
     app.show_data = ini_int(L"data", 1) != 0;
     app.start_on = ini_int(L"start_on", 0);
-    app.start_full = ini_int(L"start_full", 0);
+    app.start_full = ini_int(L"start_full", 2); // 0 as last time, 1 full screen, 2 window
+    if (ini_int(L"start_window_v101", 0) == 0) { ini_set(L"start_window_v101", 1); if (app.start_full == 0) app.start_full = 2; } // once, for settings from before
     app.awake = ini_int(L"awake", 1) != 0;
     app.topmost = ini_int(L"topmost", 0) != 0;
     app.see_through = ini_int(L"see_through", 1) != 0;
@@ -88,7 +89,8 @@ void tuning_reset()
     app.topmost = false;
     app.hot_mods = MOD_CONTROL | MOD_ALT;
     app.hot_vk = 'G';
-    app.start_on = app.start_full = 0;
+    app.start_on = 0;
+    app.start_full = 2; // a window
     app_language = 0;
     theme_image(L"");
     theme_use(0);
