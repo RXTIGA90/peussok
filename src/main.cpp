@@ -6,6 +6,7 @@
 #include "guard.h"
 #include "sys.h"
 #include "rec.h"
+#include "screen.h"
 #include <algorithm>
 #include <thread>
 #include <shellapi.h>
@@ -14,12 +15,13 @@
 
 AppState app;
 static Capture capture;
+static ScreenCapture screen; // a monitor or a window instead of a card
 static struct Sink : CaptureSink
 {
     void on_video(const uint8_t *d, size_t n, const VideoFormat &f, LONGLONG arrival, double) override { video_on_picture(d, n, f, arrival); }
     void on_buffer(uint8_t *d, size_t n, const VideoFormat &f) override { video_buffer(d, n, f); }
     void on_stop() override { video_buffers_gone(); }
-    void on_audio(const uint8_t *d, size_t n, const AudioFormat &f) override { if (app.sound) audio_push(d, n, f); rec_audio(d, n, f, qpc()); }
+    void on_audio(const uint8_t *d, size_t n, const AudioFormat &f) override { if (app.sound && !screen.running()) audio_push(d, n, f); rec_audio(d, n, f, qpc()); }
 } sink;
 
 bool replay_start(CaptureSink *s); // tests
@@ -146,6 +148,7 @@ void tuning_save()
 void app_refresh_devices()
 {
     app.devices = capture_devices();
+    for (auto &d : screen_devices()) app.devices.push_back(d);
     bool known = false;
     std::wstring name = ini_text(L"device_name", L"");
     for (auto &d : app.devices)
@@ -154,7 +157,7 @@ void app_refresh_devices()
             known = true;
             if (name != d.name) ini_set(L"device_name", d.name);
         }
-    if (known || app.devices.empty()) return;
+    if (known || app.devices.empty() || app.device.rfind(L"window:", 0) == 0) return; // a taken window is not in the list
     if (!app.device.empty() && !name.empty()) // the chosen card is unplugged: only the same one at another socket takes its place
     {
         for (auto &d : app.devices)
@@ -167,6 +170,7 @@ void app_refresh_devices()
     int score = -1;
     for (auto &d : app.devices)
     {
+        if (screen_path(d.path)) continue; // a monitor or a window only when chosen
         int s = has(d.name, L"Virtual") || has(d.name, L"OBS") || has(d.name, L"VTube") ? 0 : has(d.name, L"AVerMedia") || has(d.name, L"Elgato") || has(d.name, L"Capture") || has(d.name, L"Game") || has(d.name, L"Cam Link") ? 3 : has(d.name, L"cam") || has(d.name, L"CAM") || has(d.name, L"Cam") ? 1 : 2;
         if (s > score) { score = s; best = &d; }
     }
@@ -177,7 +181,18 @@ void app_open()
     if (bench_running) return;
     if (app.devices.empty()) app_refresh_devices();
     capture.close();
+    screen.close();
     video_no_signal();
+    screen_exclude_own(false); // until the program lies over what is taken
+    if (screen_path(app.device))
+    {
+        app.problem = screen.open(app.device, app.sound, &sink);
+        app.formats.clear();
+        app.current = screen.video();
+        app.audio = screen.audio();
+        if (!app.problem.empty()) logf("app: %ls", app.problem.c_str());
+        return;
+    }
     if (app.device.empty()) { app.problem = tr(L"캡처보드를 찾지 못했어요", L"No capture card found"); return; }
     VideoFormat want = app.want;
     app.problem = capture.open(app.device, want, app.sound, &sink);
@@ -313,6 +328,7 @@ void app_bench(bool full)
 {
     if (bench_running) return;
     capture.close();
+    screen.close();
     bench_start(full);
 }
 static void bench_check()
@@ -424,8 +440,21 @@ static void tick()
     static ULONGLONG retry;
     static ULONGLONG silent;
     bench_check();
-    if (signal || !capture.running()) silent = GetTickCount64();
-    if (!bench_running && !app.testing && GetTickCount64() - retry > 3000 && (!capture.running() || GetTickCount64() - silent > 8000)) // unplugged, or in use by another program
+    bool open = capture.running() || screen.running();
+    if (!screen.running()) screen_exclude_own(false);
+    else
+    {
+        VideoFormat v = screen.video();
+        if (v.w) app.current = v;
+        // Left out of the capture only while the program covers what is taken in full screen (it would take itself); a window
+        // always stays visible to remote desktop programs, OBS and screenshots.
+        RECT a = screen.area(), w, x;
+        GetWindowRect(app.window, &w);
+        bool over = app.fullscreen && IntersectRect(&x, &a, &w); // only full screen: a window stays reachable (it then shows itself, as an OBS preview does)
+        screen_exclude_own(over);
+    }
+    if (signal || !open) silent = GetTickCount64();
+    if (!bench_running && !app.testing && GetTickCount64() - retry > 3000 && (!open || GetTickCount64() - silent > 8000)) // unplugged, or in use by another program
     {
         retry = silent = GetTickCount64();
         app_refresh_devices();
@@ -455,9 +484,9 @@ static void tick()
     if (stats && GetTickCount64() - said > 2000)
     {
         said = GetTickCount64();
-        logf("stats src=%.1f shown=%.1f lat=%.2f copy=%.2f ready=%.2f gen=%.2f hud=%.2f made=%.2f share=%.2f early=%.0f%% ahead=%.0f%% every=%.1f | sources=%lld made=%lld skipped=%lld dropped=%lld late=%lld cuts=%lld flow=%ld audio=%.0fms gaps=%lld",
+        logf("stats src=%.1f shown=%.1f lat=%.2f copy=%.2f ready=%.2f gen=%.2f hud=%.2f made=%.2f share=%.2f early=%.0f%% ahead=%.0f%% every=%.1f | sources=%lld made=%lld skipped=%lld dropped=%lld late=%lld cuts=%lld flow=%ld audio=%.0fms gaps=%lld gpu=%.0f%%",
              source_fps, shown_fps, num.latency.get(), num.copy.get(), num.ready.get(), num.generate.get(), num.hud.get(), num.made.get(), num.share.get(), num.early.get(), num.ahead.get(), num.interval.get(), (long long)num.sources, (long long)num.made_count,
-             (long long)num.skipped, (long long)num.dropped, (long long)num.late, (long long)num.cuts, num.flow, audio_buffer_ms(), (long long)audio_gaps);
+             (long long)num.skipped, (long long)num.dropped, (long long)num.late, (long long)num.cuts, num.flow, audio_buffer_ms(), (long long)audio_gaps, (double)sys_live().gpu);
     }
 }
 
@@ -554,7 +583,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int)
     if (!wcsstr(cmd, L"--child") && !GetEnvironmentVariableW(L"PKAPP_NO_GUARD", nullptr, 0)) return guard_main(cmd);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     HANDLE one = CreateMutexW(nullptr, FALSE, L"PeussokAppOne");
-    if (GetLastError() == ERROR_ALREADY_EXISTS && !GetEnvironmentVariableW(L"PKAPP_FAKE", nullptr, 0))
+    if (GetLastError() == ERROR_ALREADY_EXISTS && !GetEnvironmentVariableW(L"PKAPP_FAKE", nullptr, 0) && !GetEnvironmentVariableW(L"PKAPP_SECOND", nullptr, 0)) // tests: a second one
     {
         HWND h = FindWindowW(L"PeussokApp", nullptr);
         if (h) { if (IsIconic(h)) ShowWindow(h, SW_RESTORE); SetForegroundWindow(h); }
@@ -562,6 +591,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int)
     }
     log_open();
     logf("Peussok %ls", APP_VERSION);
+    SetUnhandledExceptionFilter([](EXCEPTION_POINTERS *e) -> LONG {
+        logf("crash 0x%08lx at +0x%llx", (unsigned long)e->ExceptionRecord->ExceptionCode, (unsigned long long)((char *)e->ExceptionRecord->ExceptionAddress - (char *)GetModuleHandleW(nullptr)));
+        return EXCEPTION_CONTINUE_SEARCH;
+    });
     guard_child_begin(cmd);
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     timeBeginPeriod(1);
@@ -664,6 +697,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int)
     app_record(false);
     replay_stop();
     capture.close();
+    screen.close();
     audio_stop();
     sys_stop();
     rec_stop();

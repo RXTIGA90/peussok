@@ -19,6 +19,7 @@ static volatile LONG stop_flag, format_seen;
 static HANDLE thread;
 static const double base_ms = 18;
 volatile LONG64 audio_gaps;
+static volatile LONG playing; // the sound card takes our sound
 
 void audio_push(const uint8_t *d, size_t size, const AudioFormat &f)
 {
@@ -44,13 +45,14 @@ void audio_push(const uint8_t *d, size_t size, const AudioFormat &f)
     MemoryBarrier();
     InterlockedExchange64(&wpos, w + (LONG64)n);
 }
-double audio_buffer_ms() { return 1000.0 * (double)(wpos - rpos_int) / (double)in_rate; }
+double audio_buffer_ms() { return playing && in_rate > 0 ? 1000.0 * (double)(wpos - rpos_int) / (double)in_rate : 0; } // not playing: 0
 
 static bool render_once()
 {
     IMMDeviceEnumerator *en = nullptr;
     IMMDevice *dev = nullptr;
     IAudioClient3 *c3 = nullptr;
+    IAudioClient *c = nullptr; // c3 when the low latency way works, otherwise the ordinary one
     IAudioRenderClient *rc = nullptr;
     WAVEFORMATEX *mix = nullptr;
     HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -62,21 +64,39 @@ static bool render_once()
         if (FAILED(en->GetDefaultAudioEndpoint(eRender, eConsole, &dev))) break;
         LPWSTR s = nullptr;
         if (SUCCEEDED(dev->GetId(&s))) { id = s; CoTaskMemFree(s); }
-        if (FAILED(dev->Activate(__uuidof(IAudioClient3), CLSCTX_ALL, nullptr, (void **)&c3))) break;
-        if (FAILED(c3->GetMixFormat(&mix))) break;
         UINT32 def = 0, unit = 0, low = 0, high = 0, size = 0;
-        HRESULT hr = c3->GetSharedModeEnginePeriod(mix, &def, &unit, &low, &high);
-        if (SUCCEEDED(hr)) hr = c3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, low, mix, nullptr);
-        if (FAILED(hr)) { static int said; if (said++ < 5) logf("audio: open failed %08lx", (unsigned long)hr); break; }
-        c3->SetEventHandle(ev);
-        c3->GetBufferSize(&size);
-        if (FAILED(c3->GetService(IID_PPV_ARGS(&rc)))) break;
-        bool flt = mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT || (mix->wFormatTag == WAVE_FORMAT_EXTENSIBLE && reinterpret_cast<WAVEFORMATEXTENSIBLE *>(mix)->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT);
-        logf("audio: playback %lu Hz %u ch period %u (%.1f ms) buffer %u %s", mix->nSamplesPerSec, mix->nChannels, low, 1000.0 * low / mix->nSamplesPerSec, size, flt ? "float" : "other");
-        if (!flt) { again = false; break; }
+        HRESULT hr = E_FAIL;
+        if (SUCCEEDED(dev->Activate(__uuidof(IAudioClient3), CLSCTX_ALL, nullptr, (void **)&c3)) && SUCCEEDED(c3->GetMixFormat(&mix)))
+        {
+            hr = c3->GetSharedModeEnginePeriod(mix, &def, &unit, &low, &high);
+            if (SUCCEEDED(hr)) hr = c3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, low, mix, nullptr);
+            if (SUCCEEDED(hr)) { c = c3; c3 = nullptr; }
+        }
+        if (FAILED(hr)) // some sound cards (HDMI, USB, Bluetooth) have no low latency mode: the ordinary way, 10 ms
+        {
+            static int said;
+            if (said++ < 5) logf("audio: low latency open failed %08lx, the ordinary way", (unsigned long)hr);
+            release(c3);
+            if (mix) { CoTaskMemFree(mix); mix = nullptr; }
+            if (FAILED(dev->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void **)&c)) || FAILED(c->GetMixFormat(&mix))) break;
+            hr = c->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 200000, 0, mix, nullptr);
+            if (FAILED(hr)) { if (said++ < 5) logf("audio: open failed %08lx", (unsigned long)hr); break; }
+            low = mix->nSamplesPerSec / 100;
+        }
+        c->SetEventHandle(ev);
+        c->GetBufferSize(&size);
+        if (FAILED(c->GetService(IID_PPV_ARGS(&rc)))) break;
+        bool ext = mix->wFormatTag == WAVE_FORMAT_EXTENSIBLE;
+        bool flt = mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT || (ext && reinterpret_cast<WAVEFORMATEXTENSIBLE *>(mix)->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT);
+        bool pcm = mix->wFormatTag == WAVE_FORMAT_PCM || (ext && reinterpret_cast<WAVEFORMATEXTENSIBLE *>(mix)->SubFormat.Data1 == WAVE_FORMAT_PCM);
+        int bits = mix->wBitsPerSample;
+        logf("audio: playback %lu Hz %u ch %d bit period %u (%.1f ms) buffer %u %s", mix->nSamplesPerSec, mix->nChannels, bits, low, 1000.0 * low / mix->nSamplesPerSec, size, flt ? "float" : pcm ? "integer" : "other");
+        if (!(flt && bits == 32) && !(pcm && (bits == 16 || bits == 24 || bits == 32))) { again = false; break; }
+        if (low > size / 2) low = size / 2;
         BYTE *p = nullptr;
         if (SUCCEEDED(rc->GetBuffer(size, &p))) rc->ReleaseBuffer(size, AUDCLNT_BUFFERFLAGS_SILENT);
-        c3->Start();
+        c->Start();
+        InterlockedExchange(&playing, 1);
         double pos = 0, fill = base_ms;
         bool running = false;
         ULONGLONG checked = GetTickCount64();
@@ -94,10 +114,19 @@ static bool render_once()
                 if (!same) break;
             }
             UINT32 pad = 0;
-            if (FAILED(c3->GetCurrentPadding(&pad))) break;
+            if (FAILED(c->GetCurrentPadding(&pad))) break;
             UINT32 want = pad < 2 * low ? std::min(2 * low, size) - pad : 0; // keep two periods in the device
             if (!want || FAILED(rc->GetBuffer(want, &p))) continue;
-            float *out = reinterpret_cast<float *>(p);
+            BYTE *out = p;
+            int step_bytes = bits / 8;
+            auto put = [&](float v) {
+                v = std::max(-1.f, std::min(1.f, v));
+                if (flt) *reinterpret_cast<float *>(out) = v;
+                else if (bits == 16) *reinterpret_cast<int16_t *>(out) = (int16_t)lrintf(v * 32767.f);
+                else if (bits == 24) { int32_t x = (int32_t)lrintf(v * 8388607.f); out[0] = (BYTE)x; out[1] = (BYTE)(x >> 8); out[2] = (BYTE)(x >> 16); }
+                else *reinterpret_cast<int32_t *>(out) = (int32_t)llrint(v * 2147483647.0);
+                out += step_bytes;
+            };
             LONG64 w = wpos;
             static LONG delay_now = -1;
             double target_ms = base_ms + (double)std::min(300L, std::max(0L, (LONG)audio_delay));
@@ -120,16 +149,18 @@ static bool render_once()
                     r = (a[1] + (b[1] - a[1]) * t) * gain;
                     pos += step;
                 }
-                for (int ch = 0; ch < mix->nChannels; ch++) *out++ = ch == 0 ? l : ch == 1 ? r : 0.f;
-                if (mix->nChannels == 1) out[-1] = (l + r) * 0.5f;
+                if (mix->nChannels == 1) put((l + r) * 0.5f);
+                else for (int ch = 0; ch < mix->nChannels; ch++) put(ch == 0 ? l : ch == 1 ? r : 0.f);
             }
             rc->ReleaseBuffer(want, 0);
             InterlockedExchange64(&rpos_int, (LONG64)pos);
         }
-        c3->Stop();
+        c->Stop();
     } while (false);
+    InterlockedExchange(&playing, 0);
     if (mix) CoTaskMemFree(mix);
     release(rc);
+    release(c);
     release(c3);
     release(dev);
     release(en);

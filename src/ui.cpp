@@ -5,6 +5,7 @@
 // otherwise, so its place, look and action are written once. Coordinates: 96-dpi units.
 // All of this runs on the window thread without the graphics card; the picture path has its own threads and its own device.
 #include "app.h"
+#include "screen.h"
 #include "bench.h"
 #include "draw.h"
 #include "sys.h"
@@ -947,20 +948,57 @@ static void page_input(Col &c)
 {
     bool reopen = false;
     // ---- the card ----
-    heading(c, tr(L"캡처보드", L"Capture card"));
+    bool scr = screen_path(app.device);
+    heading(c, tr(L"입력", L"Input"));
+    // like OBS: the kind of input, then the one of that kind
+    auto kind_of = [](const std::wstring &p) { return p.rfind(L"window:", 0) == 0 ? 2 : p.rfind(L"screen:", 0) == 0 ? 1 : 0; };
+    int kind = kind_of(app.device);
+    {
+        int k = segment_row(c, L"\xE7F4", tr(L"입력 종류", L"Input type"), L"", {tr(L"캡처보드", L"Capture card"), tr(L"모니터", L"Monitor"), tr(L"창", L"Window")}, kind);
+        if (k >= 0 && k != kind)
+        {
+            app_refresh_devices();
+            std::wstring pick;
+            for (auto &d : app.devices)
+                if (kind_of(d.path) == k) { pick = d.path; break; }
+            if (k == 0) // the card chosen before, otherwise the program picks one
+            {
+                std::wstring before = ini_text(L"card", L"");
+                for (auto &d : app.devices) if (d.path == before) pick = before;
+            }
+            if (kind == 0 && !app.device.empty()) ini_set(L"card", app.device);
+            app.device = pick;
+            app.want = VideoFormat();
+            app.want_rate = false;
+            if (k == 0 && pick.empty()) app_refresh_devices();
+            tuning_save();
+            app_open();
+            return;
+        }
+    }
     {
         std::vector<std::wstring> names;
+        std::vector<size_t> at;
         int now = -1;
         for (size_t i = 0; i < app.devices.size(); i++)
         {
+            if (kind_of(app.devices[i].path) != kind) continue;
+            if (app.devices[i].path == app.device) now = (int)names.size();
             names.push_back(app.devices[i].name);
-            if (app.devices[i].path == app.device) now = (int)i;
+            at.push_back(i);
+        }
+        if (kind == 2 && now < 0 && !app.device.empty()) // the window chosen before, not open now
+        {
+            std::wstring k = app.device.substr(7);
+            now = (int)names.size();
+            names.push_back(L"[" + k.substr(0, k.find(L'|')) + L"] " + tr(L"(열려 있지 않음)", L"(not open)"));
+            at.push_back((size_t)-1);
         }
         mark(MK_DEVICE, c.x, c.y, c.w, 60);
-        int r = choice_row(c, L"\xE7F4", tr(L"장치", L"Device"), names, now);
-        if (r >= 0 && r != now)
+        int r = choice_row(c, kind == 1 ? L"\xE7F4" : kind == 2 ? L"\xE737" : L"\xE7F4", kind == 1 ? tr(L"모니터", L"Monitor") : kind == 2 ? tr(L"창", L"Window") : tr(L"장치", L"Device"), names, now);
+        if (r >= 0 && r != now && at[(size_t)r] != (size_t)-1)
         {
-            app.device = app.devices[(size_t)r].path;
+            app.device = app.devices[at[(size_t)r]].path;
             app.want = VideoFormat();
             app.want_rate = false;
             tuning_save();
@@ -968,9 +1006,26 @@ static void page_input(Col &c)
             return;
         }
     }
-    if (button(c.x, c.y, c.w, 36, tr(L"캡처보드 다시 찾기", L"Search for cards again"), false, true, L"\xE72C")) { app_refresh_devices(); app_open(); return; }
+    if (button(c.x, c.y, c.w, 36, kind == 2 ? tr(L"창 목록 새로 고침", L"Refresh the window list") : kind == 1 ? tr(L"모니터 다시 찾기", L"Search monitors again") : tr(L"캡처보드 다시 찾기", L"Search for cards again"), false, true, L"\xE72C")) { app_refresh_devices(); app_open(); return; }
     c.y += 44;
     if (!app.problem.empty()) note(c, app.problem, 2, AMBER);
+    if (scr)
+    {
+        // a monitor or a window: nothing to choose, the picture comes as it is shown
+        heading(c, tr(L"화면 캡처", L"Screen capture"));
+        note(c, tr(L"리모트 플레이(PXPlay, PS Remote Play 등)나 PC 게임 화면을 받아서 프레임 생성을 걸어요. 프쏙 화면은 캡처에서 빠지니까 같은 모니터에 전체 화면으로 띄워도 돼요",
+                   L"Takes the picture of remote play (PXPlay, PS Remote Play...) or a PC game. PEUSSOK's own window is left out of the capture, so it can cover the same monitor"), 3);
+        note(c, kind == 2 ? tr(L"창 캡처는 그 창 안쪽만 받아요. 다른 창이 위를 덮어도 괜찮지만, 최소화하면 화면이 멈춰요. 리모트 플레이는 그 프로그램에서 해상도와 60fps를 가장 높게 맞춰 두세요",
+                               L"Window capture takes only the inside of that window. Other windows may cover it, but a minimized window stops the picture. Set remote play to its highest resolution and 60 fps")
+                          : tr(L"모니터 캡처는 그 모니터 화면 전체를 받아요. 화면에서 무엇이 바뀌든 새 프레임으로 들어오니, 리모트 플레이는 '창'을 고르는 게 더 좋아요",
+                               L"Monitor capture takes the whole monitor; any change on it counts as a new frame. For remote play, Window is better"), 3);
+        note(c, tr(L"소리는 PC에서 이미 나오고 있어서 프쏙은 다시 틀지 않아요. 녹화할 때만 PC 소리를 같이 담아요",
+                   L"The PC already plays the sound, so PEUSSOK does not play it again. Recordings take the PC's sound"), 3);
+        heading(c, tr(L"입력 신호", L"Input signal"));
+        if (!app.current.w || num.captured == 0) note(c, tr(L"아직 화면이 안 들어와요. 창이 열려 있고 최소화되지 않았는지 확인해 주세요", L"No picture yet. Check that the window is open and not minimized"), 2, AMBER);
+        else note(c, fmt(tr(L"입력 중 %d×%d · 약 %.0f fps · 소리 %ls", L"Receiving %d×%d · about %.0f fps · sound %ls"), app.current.w, app.current.h, app.current.fps, app.audio.rate ? fmt(L"%d Hz", app.audio.rate).c_str() : tr(L"없음", L"none")));
+        return;
+    }
 
     // ---- what the card offers ----
     std::vector<VideoFormat> all;
@@ -1312,8 +1367,8 @@ static const GuideStep guide_steps[] = {
     {P_HOME, M_NONE, L"프쏙에 오신 걸 환영해요", L"Welcome to PEUSSOK",
      L"캡처보드로 받은 게임 화면의 프레임을 늘려서 더 부드럽게 보여 줘요. 30fps 게임은 60fps 이상으로 보여요.\n\n중요한 곳만 짧게 둘러볼게요.",
      L"PEUSSOK shows your capture card's game picture with more frames: a 30 fps game looks like 60 fps or more.\n\nA short tour of the important places."},
-    {P_INPUT, M_DEVICE, L"1. 캡처보드 고르기", L"1. Choose the capture card",
-     L"콘솔이 연결된 캡처보드를 고르세요. 형식·해상도·초당 장수는 '자동'이 가장 좋아요.", L"Choose the card your console is connected to. Leave format, resolution and frame rate on Automatic."},
+    {P_INPUT, M_DEVICE, L"1. 입력 고르기", L"1. Choose the input",
+     L"콘솔이 연결된 캡처보드를 고르세요. 형식·해상도·초당 장수는 '자동'이 가장 좋아요. 리모트 플레이나 PC 게임은 입력 종류에서 '창'을 고르고 그 창을 고르면 돼요.", L"Choose the card your console is connected to and leave the format on Automatic. For remote play or a PC game, choose Window as the input type and pick its window."},
     {P_HOME, M_POWER, L"2. 켜고 끄기", L"2. On and off",
      L"가운데 원을 누르면 프레임 생성이 켜지고 꺼져요. 원 안에 보이는 fps와 원본 fps가 나와요.", L"Click the circle to switch frame generation on or off. It shows the frames you see and the source frames."},
     {P_HOME, M_PRESETS, L"3. 반응과 화질 고르기", L"3. Response or quality",
@@ -1596,7 +1651,7 @@ static void draw_card(int id, float x, float y, float w)
         big(tune.on ? model_psnr(tune.model) : tr(L"원본", L"Source"), L"");
         dots(x + w - 72, y + 46, tune.on ? model_by_id(tune.model)->quality : 5, SKY);
         const wchar_t *ch = app.current.pixel == Pixel::nv12 ? L"4:2:0 8bit" : app.current.pixel == Pixel::p010 ? L"4:2:0 10bit" : app.current.pixel == Pixel::yuy2 || app.current.pixel == Pixel::uyvy ? L"4:2:2 8bit" : app.current.pixel == Pixel::i420 || app.current.pixel == Pixel::yv12 ? L"4:2:0 8bit" : app.current.pixel == Pixel::mjpg ? L"8bit" : L"RGB 8bit";
-        facts(ix, y + 72, iw, {{tr(L"색", L"Color"), fmt(L"%hs %ls · %ls", pixel_name(app.current.pixel), ch, tune.range == 1 || (tune.range == 0 && app.current.pixel == Pixel::mjpg) ? tr(L"전체", L"full") : tr(L"제한", L"limited"))}, {tr(L"크기", L"Size"), fmt(L"%ldp → %ld×%ld", num.h, num.view_w, num.view_h)}, {tr(L"보정", L"Filters"), fmt(L"HUD %ls · %ls · %ls %lld", tune.hud ? tr(L"켬", L"On") : tr(L"끔", L"Off"), tune.sharpen ? fmt(tr(L"선명 %ld%%", L"sharp %ld%%"), tune.sharpen).c_str() : tr(L"선명 끔", L"sharp off"), tr(L"컷", L"cuts"), (long long)num.cuts)}});
+        facts(ix, y + 72, iw, {{tr(L"색", L"Color"), fmt(L"%hs %ls · %ls", pixel_name(app.current.pixel), ch, tune.range == 1 || (tune.range == 0 && (app.current.full || app.current.pixel == Pixel::mjpg)) ? tr(L"전체", L"full") : tr(L"제한", L"limited"))}, {tr(L"크기", L"Size"), fmt(L"%ldp → %ld×%ld", num.h, num.view_w, num.view_h)}, {tr(L"보정", L"Filters"), fmt(L"HUD %ls · %ls · %ls %lld", tune.hud ? tr(L"켬", L"On") : tr(L"끔", L"Off"), tune.sharpen ? fmt(tr(L"선명 %ld%%", L"sharp %ld%%"), tune.sharpen).c_str() : tr(L"선명 끔", L"sharp off"), tr(L"컷", L"cuts"), (long long)num.cuts)}});
         break;
     }
     case CARD_SOURCE:

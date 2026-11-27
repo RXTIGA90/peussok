@@ -162,10 +162,22 @@ static void pdh_read(SysLive &s)
         if (t.find(L"_pkg") != std::wstring::npos) pkg += w;
     });
     if (pkg > 0) s.cpu_w = (float)(pkg / 1000.0);
+}
+// The GPU's use as Task Manager shows it: each kind of engine (3D, Copy, Video Decode...) summed over the processes, the busiest one.
+static void pdh_gpu(SysLive &s)
+{
     if (!c_gpu) return;
-    double kinds[4] = {}; // 3D, compute, copy, other: the busier of the first two is what counts
-    pdh_each(c_gpu, [&](const wchar_t *n, double p) { kinds[wcsstr(n, L"engtype_3D") ? 0 : wcsstr(n, L"ompute") ? 1 : wcsstr(n, L"Copy") ? 2 : 3] += p; });
-    s.gpu = (float)std::min(100.0, std::max(kinds[0], kinds[1]));
+    std::vector<std::pair<std::wstring, double>> kinds;
+    pdh_each(c_gpu, [&](const wchar_t *n, double p) {
+        const wchar_t *e = wcsstr(n, L"engtype_");
+        std::wstring k = e ? e + 8 : L"";
+        for (auto &x : kinds) if (x.first == k) { x.second += p; return; }
+        kinds.push_back({k, p});
+    });
+    if (kinds.empty()) return;
+    double top = 0;
+    for (auto &x : kinds) top = std::max(top, x.second);
+    s.gpu = (float)std::min(100.0, top);
 }
 
 // ---- fixed facts ----
@@ -262,7 +274,7 @@ static DWORD WINAPI sys_main(void *)
             opened = true;
             nvml.open(info.gpu);
             if (!nvml.dev) km_open(luid);
-            pdh_open(!nvml.dev, luid);
+            pdh_open(true, luid); // the use of the GPU as Task Manager counts it, also with NVIDIA
             logf("sys: %s", nvml.dev ? "NVML" : km_handle ? "D3DKMT" : "counters only");
         }
         SysLive s;
@@ -287,6 +299,7 @@ static DWORD WINAPI sys_main(void *)
         pdh_read(s);
         if (nvml.dev) nvml.read(s);
         else km_read(s);
+        pdh_gpu(s); // over NVML's "anything running" share
         DXGI_QUERY_VIDEO_MEMORY_INFO q{};
         if (a3 && SUCCEEDED(a3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &q)))
         {

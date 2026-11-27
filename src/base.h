@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#define APP_VERSION L"1.0.1"
+#define APP_VERSION L"1.0.2"
 
 template <class T> inline void release(T *&p) { if (p) { p->Release(); p = nullptr; } }
 

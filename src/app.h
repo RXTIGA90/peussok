@@ -33,7 +33,7 @@ void app_refresh_devices();
 void app_fullscreen(bool on);
 void app_generation(bool on);
 void app_hotkey();                   // register again
-void app_video_record(bool on);      // recording the picture on or off (Ctrl+Alt+R)
+void app_video_record(bool on);
 std::wstring app_hotkey_name();
 std::wstring app_status_line();
 double app_shown_fps();

@@ -1,4 +1,4 @@
-﻿PEUSSOK 1.0.1
+﻿PEUSSOK 1.0.2
 
 PEUSSOK shows your capture card's console picture more smoothly: it makes new frames between the original ones,
 so a 30 fps game looks like 60 fps or more. No streaming or recording program is needed.
@@ -15,6 +15,7 @@ Best here; NVIDIA VFG downloads NVIDIA's files the first time), multiplier (2x m
 and Find the best settings for this PC.
 Tabs: Generation, Quality, Display (sync, G-SYNC/FreeSync, HDR, on-screen fps), Input, Sound, Record, Data, Theme,
 Benchmark, Settings.
+Screen capture (like OBS): in the Input tab set Input type to Window (or Monitor) and pick the remote play window (PXPlay, PS Remote Play) or a PC game; then go full screen as usual. PEUSSOK's own window is left out of the capture, so other capture programs do not see it either. The PC's sound is used for recordings only.
 Recording: the record button beside full screen, or Ctrl+Alt+R. Saves what you see, with sound, as MP4 in Videos\Peussok. Pause and resume in the same file (Ctrl+Alt+P).
 DLSS 5: needs an RTX 50, a current NVIDIA driver and a game with DLSS 5 on this PC (its NVIDIA file is found there).
 

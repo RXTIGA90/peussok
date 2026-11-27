@@ -3,11 +3,12 @@
 [한국어](README.md)
 
 Shows a capture card's picture on Windows with frame generation: 30 → 60, 60 → 120, and 3x/4x with some models.
-No other program is needed.
+No other program is needed. Without a card it also works on a remote play window (PXPlay, PS Remote Play) or a PC game.
 
 ## What it does
 
 - Opens the capture card itself (DirectShow) and shows it full screen with as little delay as possible. Cards of other makers work too: NV12, P010, YUY2, UYVY (HDYC), RGB32, RGB24, I420, YV12, MJPEG; the card, size, kind and frame rate can be chosen.
+- **Window and monitor capture**: like OBS, choose Window or Monitor as the input type. A window is taken by itself, also when other windows cover it.
 - Six models to choose from: FSR 3, AMD FSR FG, RIFE 4.6, RIFE 4.15 lite, NVIDIA DLSS FG and NVIDIA VFG.
 - *Start early*: with a card that hands its picture over line by line, the model starts before the last lines are there.
 - Protects HUD and text, detects scene cuts, sharpens, shows HDR on an HDR monitor, works with G-SYNC / FreeSync.
@@ -33,7 +34,7 @@ With *a lot*, the lowest part of the made pictures is guessed. Originals are alw
 
 ## Needs
 
-- Windows 10/11 64 bit, a graphics card with DirectX 11 and Vulkan 1.2 (FSR 3: 1.3), a capture card.
+- Windows 10/11 64 bit, a graphics card with DirectX 11 and Vulkan 1.2 (FSR 3: 1.3), a capture card (not needed for window or monitor capture).
 - NVIDIA VFG and DLSS FG need an RTX card that the driver allows (officially RTX 40/50).
 - DLSS 5 needs an RTX 50, a driver from September 2026 or later, and the NVIDIA-signed nvngx_dlssnr.dll that a game on this PC brings (Steam, Epic, Xbox app). The program finds it, or you choose it. It is NVIDIA's file, so it is not part of the download.
 - Tested: RTX 5080 with AVerMedia GC573, and a USB 2.0 card (MS2109, 1080p at 30 fps over MJPEG). Other cards are little tested; reports are welcome.
@@ -42,6 +43,8 @@ With *a lot*, the lowest part of the made pictures is guessed. Originals are alw
 
 - No streaming. The console's HDR brightness is not taken in as it is (the GC573 hands over an SDR picture; Console HDR input takes it in 10 bits). HDCP pictures cannot be shown.
 - Full screen is faster than a window (a window adds 7-11 ms).
+- During monitor capture, PEUSSOK full screen on that same monitor is hidden from other capture programs (OBS, remote desktop), so it does not capture itself.
+- Remote play pictures are compressed and arrive unevenly, so results are a little below a capture card.
 - The release files are not signed, so Windows shows a warning.
 
 ## Privacy
