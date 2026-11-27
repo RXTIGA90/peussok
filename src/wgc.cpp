@@ -10,6 +10,20 @@
 #include <winstring.h>
 #include <algorithm>
 
+// tests (PKAPP_SCRTIME): how long each step of a screen picture takes
+struct StepTimes
+{
+    double sum[5] = {}; int n = 0; const char *name;
+    explicit StepTimes(const char *s) : name(s) {}
+    void add(LONGLONG a, LONGLONG b, LONGLONG c, LONGLONG d, LONGLONG e, LONGLONG when)
+    {
+        static int on = GetEnvironmentVariableW(L"PKAPP_SCRTIME", nullptr, 0) ? 1 : 0;
+        if (!on) return;
+        sum[0] += ms_of(b - a); sum[1] += ms_of(c - b); sum[2] += ms_of(d - c); sum[3] += ms_of(e - d); sum[4] += ms_of(a - when);
+        if (++n == 120) { logf("%s: copy+map %.2f  pack %.2f  hand over %.2f  total %.2f  shown->got %.2f ms", name, sum[0] / n, sum[1] / n, sum[2] / n, (sum[0] + sum[1] + sum[2]) / n, sum[4] / n); for (auto &x : sum) x = 0; n = 0; }
+        (void)e;
+    }
+};
 namespace wgc
 {
 struct SizeInt32 { int32_t Width, Height; };
@@ -152,7 +166,10 @@ void screen_window_loop(HWND (*find)(const std::wstring &), const std::wstring &
         wgc::Wake *wake = nullptr;
         wgc::Token tok{};
         bool added = false;
-        HRESULT hr = D3D11CreateDevice(video_adapter(), video_adapter() ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION, &dev, nullptr, &ctx);
+        // the frames are made on the frame device itself: the picture never leaves the graphics card
+        dev = video_device();
+        HRESULT hr = dev ? S_OK : E_FAIL;
+        if (dev) dev->AddRef();
         if (SUCCEEDED(hr)) hr = dev->QueryInterface(__uuidof(IDXGIDevice), (void **)&dx);
         if (SUCCEEDED(hr)) hr = api.device(dx, &rdev);
         if (SUCCEEDED(hr)) hr = api.get(L"Windows.Graphics.Capture.GraphicsCaptureItem", wgc::IID_ItemInterop, &interop);
@@ -179,7 +196,6 @@ void screen_window_loop(HWND (*find)(const std::wstring &), const std::wstring &
         else
         {
             logf("wgc: window %dx%d%s", size.Width, size.Height, added ? "" : " (polled)");
-            ID3D11Texture2D *stage = nullptr;
             int sw = 0, sh = 0;
             bool have = false;
             LONGLONG sent = 0;
@@ -191,15 +207,10 @@ void screen_window_loop(HWND (*find)(const std::wstring &), const std::wstring &
                 for (wgc::Frame *g = nullptr; SUCCEEDED(pool->TryGetNextFrame(&g)) && g;) { out_(f); f = g; g = nullptr; } // all that waits: the newest
                 if (!f)
                 {
-                    if (have && ms_of(qpc() - sent) > 250) // nothing new (minimized, or a still picture): the last one again, so the input stays alive
-                    {
-                        VideoFormat v;
-                        v.pixel = Pixel::bgra; v.w = sw; v.h = sh; v.fps = 60; v.full = true;
-                        sink->on_video(packed.data(), packed.size(), v, qpc(), -1);
-                        sent = qpc();
-                    }
+                    if (have && ms_of(qpc() - sent) > 250) { sink->on_alive(qpc()); sent = qpc(); } // nothing new (minimized, a still picture)
                     continue;
                 }
+                LONGLONG got = qpc();
                 wgc::SizeInt32 cs{};
                 int64_t t100 = 0;
                 f->get_ContentSize(&cs);
@@ -224,29 +235,8 @@ void screen_window_loop(HWND (*find)(const std::wstring &), const std::wstring &
                 int x0 = std::max(0L, o.x - frame.left), y0 = std::max(0L, o.y - frame.top);
                 int w = std::min((int)client.right, cs.Width - x0) & ~7, h = std::min((int)client.bottom, cs.Height - y0) & ~1;
                 if (!tex || w < 64 || h < 64) { out_(tex); out_(f); continue; }
-                if (w != sw || h != sh)
-                {
-                    out_(stage);
-                    D3D11_TEXTURE2D_DESC d{};
-                    d.Width = (UINT)w;
-                    d.Height = (UINT)h;
-                    d.MipLevels = d.ArraySize = 1;
-                    d.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-                    d.SampleDesc.Count = 1;
-                    d.Usage = D3D11_USAGE_STAGING;
-                    d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-                    if (FAILED(dev->CreateTexture2D(&d, nullptr, &stage))) { out_(tex); out_(f); break; }
-                    sw = w;
-                    sh = h;
-                    gap_n = 0;
-                }
-                D3D11_BOX box = {(UINT)x0, (UINT)y0, 0, (UINT)(x0 + w), (UINT)(y0 + h), 1};
-                ctx->CopySubresourceRegion(stage, 0, 0, 0, 0, tex, 0, &box);
-                out_(tex);
-                D3D11_MAPPED_SUBRESOURCE m{};
-                hr = ctx->Map(stage, 0, D3D11_MAP_READ, 0, &m);
-                out_(f);
-                if (FAILED(hr)) break;
+                if (w != sw || h != sh) { sw = w; sh = h; gap_n = 0; }
+                // the frame's time is that of the composition it belongs to: only its gaps are used, the arrival is now
                 LONGLONG when = (LONGLONG)((double)t100 * (double)qpc_freq / 1e7);
                 if (last && when > last) { double g = ms_of(when - last); if (g > 2 && g < 200) gaps[gap_n++ & 31] = g; }
                 last = when;
@@ -254,24 +244,26 @@ void screen_window_loop(HWND (*find)(const std::wstring &), const std::wstring &
                 if (gap_n >= 8)
                 {
                     int n = std::min(gap_n, 32);
-                    double s[32];
-                    std::copy(gaps, gaps + n, s);
-                    std::nth_element(s, s + n / 2, s + n);
-                    fps = 1000.0 / s[n / 2];
+                    double q[32];
+                    std::copy(gaps, gaps + n, q);
+                    std::nth_element(q, q + n / 2, q + n);
+                    fps = 1000.0 / q[n / 2];
                     for (double r : {24.0, 30.0, 50.0, 60.0, 72.0, 90.0, 120.0, 144.0, 165.0, 240.0})
                         if (fabs(fps / r - 1) < 0.06) { fps = r; break; }
                 }
                 VideoFormat v;
                 v.pixel = Pixel::bgra; v.w = w; v.h = h; v.fps = fps; v.full = true;
                 set_format(self, v);
-                packed.resize((size_t)w * h * 4);
-                for (int y = 0; y < h; y++) memcpy(&packed[(size_t)y * w * 4], (const uint8_t *)m.pData + (size_t)m.RowPitch * y, (size_t)w * 4);
-                ctx->Unmap(stage, 0);
-                sink->on_video(packed.data(), packed.size(), v, when > 0 && when <= qpc() ? when : qpc(), -1);
+                D3D11_BOX box = {(UINT)x0, (UINT)y0, 0, (UINT)(x0 + w), (UINT)(y0 + h), 1};
+                LONGLONG t0 = qpc();
+                sink->on_texture(tex, box, v, got);
+                static StepTimes st("wgc times");
+                st.add(t0, t0, t0, qpc(), qpc(), got);
+                out_(tex);
+                out_(f);
                 have = true;
                 sent = qpc();
             }
-            out_(stage);
         }
         if (added) pool->remove_FrameArrived(tok);
         out_(wake);

@@ -996,9 +996,70 @@ void video_no_signal() { InterlockedExchange(&forget_last, 1); }
 
 bool video_even; // tests: pictures come as fast as they are read
 static double gap_before;
-void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LONGLONG arrival)
+// ---- a picture already on the graphics card (screen capture) ----
+// Its samples (for repeats and cuts) come from a small copy: every 8th pixel of every 8th line, read back to the CPU.
+static ID3D11Texture2D *gsrc, *small_rt, *small_read;
+static const D3D11_BOX *gbox;
+static ID3D11RenderTargetView *small_rtv;
+static ID3D11PixelShader *ps_small;
+static const char ps_small_src[] = "Texture2D t:register(t0);float4 main(float4 p:SV_Position):SV_Target{return t.Load(int3(int2(p.xy)*8+3,0));}";
+static void gpu_samples() // inside gl
 {
-    if (stop_all || f.pixel == Pixel::none || size < frame_bytes(f)) return;
+    int w = W / 8, h = H / 8;
+    D3D11_TEXTURE2D_DESC d{};
+    if (small_rt) small_rt->GetDesc(&d);
+    if (!small_rt || (int)d.Width != w || (int)d.Height != h)
+    {
+        release(small_rtv); release(small_rt); release(small_read);
+        d = {};
+        d.Width = (UINT)w; d.Height = (UINT)h; d.MipLevels = d.ArraySize = 1; d.Format = DXGI_FORMAT_B8G8R8A8_UNORM; d.SampleDesc.Count = 1;
+        d.BindFlags = D3D11_BIND_RENDER_TARGET;
+        dev->CreateTexture2D(&d, nullptr, &small_rt);
+        if (small_rt) dev->CreateRenderTargetView(small_rt, nullptr, &small_rtv);
+        d.BindFlags = 0; d.Usage = D3D11_USAGE_STAGING; d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        dev->CreateTexture2D(&d, nullptr, &small_read);
+        if (!ps_small) ps_small = make_ps(dev, ps_small_src);
+    }
+    if (!small_rtv || !small_read || !ps_small) { sample_now.assign(16, 0); return; }
+    D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
+    ID3D11ShaderResourceView *none = nullptr;
+    ID3D11RenderTargetView *nort = nullptr;
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    ctx->VSSetShader(vs_full, nullptr, 0);
+    ctx->PSSetShader(ps_small, nullptr, 0);
+    ctx->PSSetShaderResources(0, 1, &srvPacked);
+    ctx->RSSetState(nullptr);
+    ctx->RSSetViewports(1, &vp);
+    ctx->OMSetRenderTargets(1, &small_rtv, nullptr);
+    ctx->Draw(3, 0);
+    ctx->OMSetRenderTargets(1, &nort, nullptr);
+    ctx->PSSetShaderResources(0, 1, &none);
+    ctx->CopyResource(small_read, small_rt);
+    D3D11_MAPPED_SUBRESOURCE m{};
+    if (FAILED(ctx->Map(small_read, 0, D3D11_MAP_READ, 0, &m))) { sample_now.assign(16, 0); return; }
+    sample_now.resize((size_t)w * h * 4);
+    for (int y = 0; y < h; y++) memcpy(&sample_now[(size_t)y * w * 4], (const uint8_t *)m.pData + (size_t)m.RowPitch * y, (size_t)w * 4);
+    ctx->Unmap(small_read, 0);
+}
+static void on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LONGLONG arrival);
+void video_on_texture(ID3D11Texture2D *src, const D3D11_BOX &box, const VideoFormat &f, LONGLONG arrival)
+{
+    if (f.pixel != Pixel::bgra) return;
+    gsrc = src;
+    gbox = &box;
+    on_picture(nullptr, 0, f, arrival);
+    gsrc = nullptr;
+}
+void video_alive(LONGLONG arrival)
+{
+    num.captured = num.captured + 1;
+    num.last_arrival = arrival;
+}
+ID3D11Device *video_device() { return dev; }
+void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LONGLONG arrival) { on_picture(data, size, f, arrival); }
+static void on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LONGLONG arrival)
+{
+    if (stop_all || f.pixel == Pixel::none || (!gsrc && size < frame_bytes(f))) return;
     Hold hold(pic_lock);
     for (int i = 0; i < known_count; i++) if (known[i].p == data) stream_disarm(i);
     num.captured = num.captured + 1;
@@ -1012,7 +1073,17 @@ void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LO
     fmt.fps = f.fps;
     fmt.full = f.full;
     if (InterlockedExchange(&forget_last, 0)) sample_last.clear();
-    take_samples(data, f);
+    if (gsrc)
+    {
+        // into the input texture first (the samples are read from it); the conversion below takes it as if it had been uploaded
+        AcquireSRWLockExclusive(&gl.l);
+        LONGLONG c0 = qpc();
+        ctx->CopySubresourceRegion(packed, 0, 0, 0, 0, gsrc, 0, gbox);
+        gpu_samples();
+        num.copy.add(ms_of(qpc() - c0));
+        ReleaseSRWLockExclusive(&gl.l);
+    }
+    else take_samples(data, f);
     if (same_picture()) { early_end(EARLY_NOTHING); stream.buffer = -1; return; } // the game has not drawn a new picture
     std::swap(sample_now, sample_last);
     num.sources = num.sources + 1;
@@ -1041,6 +1112,7 @@ void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LO
     stream.buffer = -1;
     AcquireSRWLockExclusive(&gl.l);
     if (range_used != range_of(fmt)) { convert_constants(fmt); stream.rows = 0; } // what came in so far was converted the old way
+    if (!gsrc)
     {
         bool mapped = true;
         int n = 0, which[CopyPool::MAX_PIECES];
@@ -1062,8 +1134,8 @@ void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LO
         });
         if (!mapped) { static int said; if (said++ < 5) logf("video: upload failed"); }
     }
-    num.copy.add(ms_of(qpc() - t0));
-    for (int i = 0; i < band_count; i++) stream.last[i] = stream.seen & (1u << i) ? stream.hash[i] : piece_hash(data, i);
+    if (!gsrc) num.copy.add(ms_of(qpc() - t0));
+    for (int i = 0; i < band_count; i++) stream.last[i] = gsrc ? 0 : stream.seen & (1u << i) ? stream.hash[i] : piece_hash(data, i);
     num.early.add(100.0 * stream.rows / H);
     convert_rows(slot, stream.rows, H);
     static int check = GetEnvironmentVariableW(L"PKAPP_CHECK", nullptr, 0) ? 1 : 0; // tests: is the streamed picture the same as the ordinary one?
@@ -2181,7 +2253,10 @@ bool video_start(HWND w)
     DXGI_ADAPTER_DESC1 ad;
     adapter->GetDesc1(&ad);
     logf("video: %ls", ad.Description);
-    if (FAILED(D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &dev, nullptr, &ctx))) return false;
+    if (FAILED(D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION, &dev, nullptr, &ctx))) return false;
+    // screen capture (Desktop Duplication, Windows Graphics Capture) works on this device from its own thread
+    ID3D11Multithread *mt = nullptr;
+    if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&mt)))) { mt->SetMultithreadProtected(TRUE); release(mt); }
     IDXGIDevice *xd = nullptr;
     if (SUCCEEDED(dev->QueryInterface(IID_PPV_ARGS(&xd)))) { xd->SetGPUThreadPriority(5); release(xd); }
     vs_full = make_vs(dev, vs_src);

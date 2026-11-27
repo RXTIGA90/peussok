@@ -21,6 +21,8 @@ static struct Sink : CaptureSink
     void on_video(const uint8_t *d, size_t n, const VideoFormat &f, LONGLONG arrival, double) override { video_on_picture(d, n, f, arrival); }
     void on_buffer(uint8_t *d, size_t n, const VideoFormat &f) override { video_buffer(d, n, f); }
     void on_stop() override { video_buffers_gone(); }
+    void on_texture(ID3D11Texture2D *t, const D3D11_BOX &b, const VideoFormat &f, LONGLONG arrival) override { video_on_texture(t, b, f, arrival); }
+    void on_alive(LONGLONG arrival) override { video_alive(arrival); }
     void on_audio(const uint8_t *d, size_t n, const AudioFormat &f) override { if (app.sound && !screen.running()) audio_push(d, n, f); rec_audio(d, n, f, qpc()); }
 } sink;
 

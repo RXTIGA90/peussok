@@ -30,6 +30,9 @@ struct CaptureSink
     virtual void on_buffer(uint8_t *data, size_t size, const VideoFormat &f) {}
     virtual void on_stop() {} // the buffers go away now
     virtual void on_audio(const uint8_t *data, size_t size, const AudioFormat &f) = 0;
+    // Screen capture: the part box of src (a texture of video_device(), B8G8R8A8) is the picture; valid only during the call.
+    virtual void on_texture(struct ID3D11Texture2D *src, const struct D3D11_BOX &box, const VideoFormat &f, LONGLONG arrival) {}
+    virtual void on_alive(LONGLONG arrival) {} // nothing new, the input is still there
 };
 
 std::vector<Device> capture_devices();

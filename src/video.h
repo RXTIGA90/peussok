@@ -10,6 +10,7 @@
 #include "capture.h"
 #include "engine.h"
 #include <dxgi1_6.h>
+#include <d3d11.h>
 
 // Everything a user can change while the picture runs.
 struct Tuning
@@ -54,6 +55,9 @@ enum { RING_MADE = 1 << 30 };
 bool video_start(HWND window);
 void video_stop();
 void video_on_picture(const uint8_t *data, size_t size, const VideoFormat &f, LONGLONG arrival); // capture thread
+void video_on_texture(ID3D11Texture2D *src, const D3D11_BOX &box, const VideoFormat &f, LONGLONG arrival); // the same, the picture already on the card
+void video_alive(LONGLONG arrival); // nothing new came, but the input is there
+ID3D11Device *video_device();      // the frame device (protected for use from several threads)
 void video_buffer(uint8_t *data, size_t size, const VideoFormat &f); // capture thread: the driver fills this buffer again
 void video_buffers_gone();
 void video_resized();          // window thread

@@ -4,6 +4,7 @@
 // the same monitor, over the window it takes the picture from. The sound is what the PC plays (loopback), for recordings only:
 // the PC already plays it itself.
 #include "screen.h"
+#include "video.h"
 #include <d3d11.h>
 #include <dxgi1_6.h>
 #include <dwmapi.h>
@@ -12,6 +13,20 @@
 #include <algorithm>
 #include <string>
 
+// tests (PKAPP_SCRTIME): how long each step of a screen picture takes
+struct StepTimes
+{
+    double sum[5] = {}; int n = 0; const char *name;
+    explicit StepTimes(const char *s) : name(s) {}
+    void add(LONGLONG a, LONGLONG b, LONGLONG c, LONGLONG d, LONGLONG e, LONGLONG when)
+    {
+        static int on = GetEnvironmentVariableW(L"PKAPP_SCRTIME", nullptr, 0) ? 1 : 0;
+        if (!on) return;
+        sum[0] += ms_of(b - a); sum[1] += ms_of(c - b); sum[2] += ms_of(d - c); sum[3] += ms_of(e - d); sum[4] += ms_of(a - when);
+        if (++n == 120) { logf("%s: copy+map %.2f  pack %.2f  hand over %.2f  total %.2f  shown->got %.2f ms", name, sum[0] / n, sum[1] / n, sum[2] / n, (sum[0] + sum[1] + sum[2]) / n, sum[4] / n); for (auto &x : sum) x = 0; n = 0; }
+        (void)e;
+    }
+};
 bool screen_path(const std::wstring &p) { return p.rfind(L"screen:", 0) == 0 || p.rfind(L"window:", 0) == 0; }
 
 static std::wstring exe_of(HWND w);
@@ -257,10 +272,21 @@ void ScreenCapture::loop()
         ID3D11Device *dev = nullptr;
         ID3D11DeviceContext *ctx = nullptr;
         IDXGIOutputDuplication *dup = nullptr;
+        // The monitor of the frame device's graphics card, not turned: its pictures stay on the card (direct). Otherwise a device of
+        // its own, and the pictures go through the CPU.
+        bool direct = false;
+        if (out && video_device() && video_adapter())
+        {
+            DXGI_ADAPTER_DESC1 a1, a2;
+            ad->GetDesc1(&a1);
+            video_adapter()->GetDesc1(&a2);
+            direct = a1.AdapterLuid.LowPart == a2.AdapterLuid.LowPart && a1.AdapterLuid.HighPart == a2.AdapterLuid.HighPart && od.Rotation <= DXGI_MODE_ROTATION_IDENTITY;
+        }
         if (out)
         {
             D3D_FEATURE_LEVEL fl11 = D3D_FEATURE_LEVEL_11_0;
-            if (SUCCEEDED(D3D11CreateDevice(ad, D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, &fl11, 1, D3D11_SDK_VERSION, &dev, nullptr, &ctx)))
+            if (direct) { dev = video_device(); dev->AddRef(); }
+            if (direct || SUCCEEDED(D3D11CreateDevice(ad, D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, &fl11, 1, D3D11_SDK_VERSION, &dev, nullptr, &ctx)))
             {
                 IDXGIOutput5 *o5 = nullptr;
                 HRESULT hr = E_FAIL;
@@ -282,7 +308,8 @@ void ScreenCapture::loop()
         // a monitor turned on its side (or upside down): its picture comes as the panel has it, and is turned back here
         int turn = dd.Rotation == DXGI_MODE_ROTATION_ROTATE90 ? 90 : dd.Rotation == DXGI_MODE_ROTATION_ROTATE180 ? 180 : dd.Rotation == DXGI_MODE_ROTATION_ROTATE270 ? 270 : 0;
         LONG dw = od.DesktopCoordinates.right - od.DesktopCoordinates.left, dh = od.DesktopCoordinates.bottom - od.DesktopCoordinates.top;
-        logf("screen: %ls %ux%u rotation %d", od.DeviceName, dd.ModeDesc.Width, dd.ModeDesc.Height, (int)dd.Rotation);
+        if (turn) direct = false;
+        logf("screen: %ls %ux%u rotation %d%s", od.DeviceName, dd.ModeDesc.Width, dd.ModeDesc.Height, (int)dd.Rotation, direct ? " (on the card)" : "");
         ID3D11Texture2D *stage = nullptr;
         int sw = 0, sh = 0, tw = 0, th = 0; // tw, th: the staging copy of a turned monitor (all of it)
         bool have = false;
@@ -306,12 +333,16 @@ void ScreenCapture::loop()
             int w = (int)(want.right - want.left) & ~7, h = (int)(want.bottom - want.top) & ~1;
             DXGI_OUTDUPL_FRAME_INFO fi{};
             IDXGIResource *res = nullptr;
-            HRESULT hr = dup->AcquireNextFrame(100, &fi, &res);
+            // On the frame device a wait inside AcquireNextFrame would hold the device (and the generation with it): it only looks, and
+            // the thread sleeps a millisecond between looks.
+            HRESULT hr = dup->AcquireNextFrame(direct ? 0 : 100, &fi, &res);
+            if (direct && hr == DXGI_ERROR_WAIT_TIMEOUT) Sleep(1);
             if (hr == DXGI_ERROR_WAIT_TIMEOUT || (SUCCEEDED(hr) && fi.LastPresentTime.QuadPart == 0))
             {
                 if (SUCCEEDED(hr)) { res->Release(); dup->ReleaseFrame(); }
                 // nothing new: the last picture again now and then, so the input counts as alive
-                if (have && turn && ms_of(qpc() - sent) > 250)
+                if (have && direct && ms_of(qpc() - sent) > 250) { sink->on_alive(qpc()); sent = qpc(); }
+                else if (have && turn && ms_of(qpc() - sent) > 250)
                 {
                     VideoFormat vv = video();
                     sink->on_video(packed.data(), (size_t)sw * sh * 4, vv, qpc(), -1);
@@ -362,6 +393,40 @@ void ScreenCapture::loop()
             res->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&t);
             res->Release();
             if (!t) { dup->ReleaseFrame(); continue; }
+            if (direct) // straight into the frame device's input
+            {
+                LONGLONG when = fi.LastPresentTime.QuadPart;
+                if (last_present && when > last_present) { double g = ms_of(when - last_present); if (g > 2 && g < 200) gaps[gap_n++ & 31] = g; }
+                last_present = when;
+                if (w != sw || h != sh) { sw = w; sh = h; gap_n = 0; }
+                double fps = 60;
+                if (gap_n >= 8)
+                {
+                    int n = std::min(gap_n, 32);
+                    double q[32];
+                    std::copy(gaps, gaps + n, q);
+                    std::nth_element(q, q + n / 2, q + n);
+                    fps = 1000.0 / q[n / 2];
+                    for (double r : {24.0, 30.0, 50.0, 60.0, 72.0, 90.0, 120.0, 144.0, 165.0, 240.0})
+                        if (fabs(fps / r - 1) < 0.06) { fps = r; break; }
+                }
+                VideoFormat nf;
+                nf.pixel = Pixel::bgra; nf.w = w; nf.h = h; nf.fps = fps; nf.full = true;
+                AcquireSRWLockExclusive(&fl);
+                vf = nf;
+                taken = {od.DesktopCoordinates.left + want.left, od.DesktopCoordinates.top + want.top, od.DesktopCoordinates.left + want.left + w, od.DesktopCoordinates.top + want.top + h};
+                ReleaseSRWLockExclusive(&fl);
+                D3D11_BOX box = {(UINT)want.left, (UINT)want.top, 0, (UINT)(want.left + w), (UINT)(want.top + h), 1};
+                LONGLONG t0 = qpc();
+                sink->on_texture(t, box, nf, std::min(when, qpc()));
+                t->Release();
+                dup->ReleaseFrame();
+                static StepTimes st("screen times");
+                st.add(t0, t0, t0, qpc(), qpc(), when);
+                have = true;
+                sent = qpc();
+                continue;
+            }
             D3D11_TEXTURE2D_DESC td;
             t->GetDesc(&td);
             int cw = turn ? (int)td.Width : w, ch = turn ? (int)td.Height : h; // what is copied: all of a turned monitor
@@ -384,6 +449,7 @@ void ScreenCapture::loop()
                 have = false;
                 gap_n = 0;
             }
+            LONGLONG t0 = qpc();
             if (turn) ctx->CopyResource(stage, t);
             else
             {
@@ -424,6 +490,7 @@ void ScreenCapture::loop()
             vf = nf;
             taken = {od.DesktopCoordinates.left + want.left, od.DesktopCoordinates.top + want.top, od.DesktopCoordinates.left + want.left + w, od.DesktopCoordinates.top + want.top + h};
             ReleaseSRWLockExclusive(&fl);
+            LONGLONG t1 = qpc();
             const uint8_t *data = (const uint8_t *)m.pData;
             if (turn)
             {
@@ -453,7 +520,10 @@ void ScreenCapture::loop()
                 data = packed.data();
             }
 
+            LONGLONG t2 = qpc();
             sink->on_video(data, (size_t)w * h * 4, nf, std::min(when, qpc()), -1);
+            static StepTimes st("screen times");
+            st.add(t0, t1, t2, qpc(), qpc(), when);
             ctx->Unmap(stage, 0);
             have = true;
             sent = qpc();
