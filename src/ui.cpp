@@ -892,11 +892,17 @@ static void page_picture(Col &c)
 // A row with a field that shows the chosen value; a click opens the list (the system's own menu). The index chosen, or -1.
 // A choice like the model list: the row opens in place and lists the choices in the program's own look (not a Windows menu).
 static std::wstring choice_open; // the title of the open one
+static int draw_page_now;             // the page being drawn
+static float choice_title[64];        // the longest choice title per page and language
 static int choice_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::vector<std::wstring> &names, int now, const std::wstring &d = L"")
 {
     bool open = choice_open == t && !names.empty();
     float list = open ? 8.f + (float)names.size() * 40.f : 0.f;
-    float bw = std::max(120.f, std::min(420.f, c.w - 96 - std::ceil(d_width(F_BOLD, t)))); // as wide as the title leaves room for
+    // every field on a page is the same width: as wide as the page's longest title leaves room for
+    float &widest = choice_title[draw_page_now * 2 + (korean() ? 0 : 1)];
+    float tw = std::ceil(d_width(F_BOLD, t));
+    if (tw > widest) { widest = tw; repaint_all(); }
+    float bw = std::max(120.f, std::min(340.f, c.w - 96 - widest));
     row_right = bw + 24;
     float y = card_row(c, icon, t, d, 60 + list);
     float bx = c.x + c.w - bw - 12, by = y + 12;
@@ -1499,6 +1505,7 @@ static void reset_bar(Col &c, int p)
 }
 static void draw_page(int p, Col &c, bool popup)
 {
+    draw_page_now = std::clamp(p, 0, 15);
     if (p != P_HOME && p != P_THEME && p != P_SETTINGS && p != P_BENCH) reset_bar(c, p);
     switch (p)
     {
