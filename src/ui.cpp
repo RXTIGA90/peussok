@@ -175,11 +175,14 @@ static void heading(Col &c, const std::wstring &s, const std::wstring &note = L"
 }
 static void note(Col &c, const std::wstring &s, int lines = 1, Ink col = SOFT)
 {
-    text(F_SMALL, col, c.x + 4, c.y, c.w - 8, 18.f * (float)lines + 3, lines > 1 ? A_WRAP : A_LEFT, s);
-    c.y += 18.f * (float)lines + 7;
+    // as many lines as the text needs (lines: at least), so nothing is cut in another language or a narrower window
+    float h = std::max(18.f * (float)lines + 3, std::ceil(d_height(F_SMALL, s, c.w - 8)) + 3);
+    text(F_SMALL, col, c.x + 4, c.y, c.w - 8, h, A_WRAP, s);
+    c.y += h + 4;
 }
 // A card with icon, title and description; the caller puts its control at the right.
 static float card_top, card_more; // the top of the last card_row (its returned y moves down when the description wraps)
+static float row_right; // room the next row keeps at the right of its title (a field, a switch, buttons); the title never runs under it
 static float card_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, float h = 60)
 {
     float y = c.y, more = 0;
@@ -189,18 +192,21 @@ static float card_row(Col &c, const wchar_t *icon, const std::wstring &t, const 
     box(c.x, y, c.w, h + more, 10, CARD, EDGE);
     text(F_ICON, ACCENT, c.x + 14, y, 24, 60, A_CENTER, icon);
     float th = d.empty() ? 60 : 24;
-    text(F_BOLD, TEXT, c.x + 50, d.empty() ? y : y + 9, c.w - 64, th, A_LEFT, t);
+    text(F_BOLD, TEXT, c.x + 50, d.empty() ? y : y + 9, c.w - 64 - row_right, th, A_LEFT, t);
+    row_right = 0;
     if (!d.empty()) text(F_SMALL, SOFT, c.x + 50, y + 31, c.w - 120, 20 + more, A_WRAP, d);
     c.y += h + more + 6;
     return y + more;
 }
 static void switch_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, volatile LONG &v)
 {
+    row_right = 66;
     float y = card_row(c, icon, t, d);
     if (toggle(c.x + c.w - 58, y + 18 - card_more / 2, v != 0)) set(v, !v);
 }
 static void slider_row(Col &c, const wchar_t *icon, int id, const std::wstring &t, const std::wstring &value, const std::wstring &d, volatile LONG &v, int lo, int hi, int def)
 {
+    row_right = d_width(F_BOLD, value) + 24;
     float y = card_row(c, icon, t, d, d.empty() ? 80 : 88);
     text(F_BOLD, ACCENT_HI, c.x + c.w - 190, card_top + 9, 176, 24, A_RIGHT, value);
     int n = slider(id, c.x + 44, y + (d.empty() ? 46.f : 55.f), c.w - 58, lo, hi, def, v);
@@ -561,8 +567,9 @@ static void record_row(Col &c)
         if (rec_dropped() > 0) say += fmt(tr(L" · 빠짐 %lld", L" · left out %lld"), rec_dropped());
     }
     else if (!e.empty()) say = e;
-    else say = tr(L"보이는 화면 그대로 (생성 프레임·소리 포함) · Ctrl+Alt+R", L"What you see, made frames and sound included · Ctrl+Alt+R");
+    else say = tr(L"보이는 화면 그대로 (생성 프레임·소리 포함) · Ctrl\u2060+\u2060Alt\u2060+\u2060R", L"What you see, made frames and sound included · Ctrl\u2060+\u2060Alt\u2060+\u2060R");
     float more = std::max(0.f, std::ceil(d_height(F_SMALL, say, c.w - 64)) - 21.f); // a long line wraps and the card grows
+    row_right = on ? 230.f : 124.f;
     float y = card_row(c, on ? L"\xE7C8" : L"\xE714", tr(L"녹화", L"Record"), L"", 88 + more);
     text(F_SMALL, on ? ACCENT_HI : !e.empty() ? AMBER : SOFT, c.x + 50, y + 58, c.w - 64, 20 + more, A_WRAP, say); // a line of its own under the buttons
     // the folder has its own card below: here only start, or pause / go on and stop
@@ -575,6 +582,7 @@ static void record_row(Col &c)
 }
 static void volume_row(Col &c)
 {
+    row_right = c.w - 116; // the slider starts at 110
     float y = card_row(c, audio_mute ? L"\xE74F" : L"\xE767", tr(L"소리", L"Sound"), L"");
     int v = slider(1, c.x + 110, y + 19, c.w - 236, 0, 100, -1, audio_volume);
     if (gui.changed) InterlockedExchange(&audio_volume, v);
@@ -633,6 +641,7 @@ static bool nr_row(Col &c)
 static bool hdr_row(Col &c)
 {
     bool on = num.hdr == 2;
+    row_right = 66;
     float y = card_row(c, L"\xE706", L"HDR", hdr_busy() ? tr(L"바꾸고 있어요. 화면이 잠깐 꺼져요", L"Changing. The screen may go black briefly") : on && num.hdr_out ? fmt(tr(L"작동 중 · 최대 %ld nit", L"Active · peak %ld nits"), num.hdr_peak) : on ? std::wstring(tr(L"Windows HDR만 켜져 있어요", L"Only Windows HDR is on")) : std::wstring(tr(L"켤 때 화면이 1~2초 꺼질 수 있어요", L"The screen may go black for 1-2 s")));
     if (!toggle(c.x + c.w - 58, y + 18 - card_more / 2, on && tune.hdr) || hdr_busy()) return false;
     bool want = !(on && tune.hdr);
@@ -767,6 +776,7 @@ static void model_rows(Col &c)
 }
 static void page_generate(Col &c)
 {
+    row_right = 66;
     float y = card_row(c, L"\xE945", tr(L"프레임 생성", L"Frame generation"), app_status_line());
     if (toggle(c.x + c.w - 58, y + 18 - card_more / 2, tune.on != 0)) app_generation(!tune.on);
     model_rows(c);
@@ -886,8 +896,10 @@ static int choice_row(Col &c, const wchar_t *icon, const std::wstring &t, const 
 {
     bool open = choice_open == t && !names.empty();
     float list = open ? 8.f + (float)names.size() * 40.f : 0.f;
+    float bw = std::max(120.f, std::min(420.f, c.w - 96 - std::ceil(d_width(F_BOLD, t)))); // as wide as the title leaves room for
+    row_right = bw + 24;
     float y = card_row(c, icon, t, d, 60 + list);
-    float bw = std::min(c.w * 0.56f, 340.f), bx = c.x + c.w - bw - 12, by = y + 12;
+    float bx = c.x + c.w - bw - 12, by = y + 12;
     bool h = hot(bx, by, bw, 36);
     box(bx, by, bw, 36, 8, h || open ? FIELD_HI : FIELD, h || open ? ACCENT : EDGE);
     text(F_BODY, TEXT, bx + 12, by, bw - 44, 36, A_LEFT, now >= 0 && now < (int)names.size() ? names[(size_t)now] : std::wstring(L"—"));
@@ -1013,8 +1025,10 @@ static void page_input(Col &c)
     {
         // a monitor or a window: nothing to choose, the picture comes as it is shown
         heading(c, tr(L"화면 캡처", L"Screen capture"));
-        note(c, tr(L"리모트 플레이(PXPlay, PS Remote Play 등)나 PC 게임 화면을 받아서 프레임 생성을 걸어요. 프쏙 화면은 캡처에서 빠지니까 같은 모니터에 전체 화면으로 띄워도 돼요",
-                   L"Takes the picture of remote play (PXPlay, PS Remote Play...) or a PC game. PEUSSOK's own window is left out of the capture, so it can cover the same monitor"), 3);
+        note(c, kind == 2 ? tr(L"리모트 플레이(PXPlay, PS Remote Play 등)나 PC 게임 창을 받아서 프레임 생성을 걸어요. 그 창만 받으니까 프쏙을 그 위에 전체 화면으로 띄워도 돼요",
+                               L"Takes the window of remote play (PXPlay, PS Remote Play...) or a PC game. Only that window is taken, so PEUSSOK can cover it in full screen")
+                          : tr(L"모니터 화면 전체를 받아서 프레임 생성을 걸어요. 같은 모니터에 프쏙을 전체 화면으로 띄우면, 프쏙 화면은 원격·녹화 프로그램에 보이지 않아요",
+                               L"Takes the whole monitor. With PEUSSOK full screen on that same monitor, other capture programs (remote desktop, OBS) do not see PEUSSOK"), 3);
         note(c, kind == 2 ? tr(L"창 캡처는 그 창 안쪽만 받아요. 다른 창이 위를 덮어도 괜찮지만, 최소화하면 화면이 멈춰요. 리모트 플레이는 그 프로그램에서 해상도와 60fps를 가장 높게 맞춰 두세요",
                                L"Window capture takes only the inside of that window. Other windows may cover it, but a minimized window stops the picture. Set remote play to its highest resolution and 60 fps")
                           : tr(L"모니터 캡처는 그 모니터 화면 전체를 받아요. 화면에서 무엇이 바뀌든 새 프레임으로 들어오니, 리모트 플레이는 '창'을 고르는 게 더 좋아요",
@@ -1196,6 +1210,7 @@ static void page_data(Col &c, bool popup)
         for (int i = 0; i < CARDS; i++)
             if (app.cards >> i & 1) { draw_card(i, c.x, c.y, c.w); c.y += CARD_H + GAP; }
     heading(c, tr(L"기록", L"Log"));
+    row_right = 114;
     float y = card_row(c, L"\xE7C8", tr(L"데이터 기록", L"Record data"), tr(L"1초에 한 줄씩 CSV로 (엑셀)", L"One line per second (CSV)"));
     if (button(c.x + c.w - 104, y + 13, 90, 34, app.recording ? tr(L"멈추기", L"Stop") : tr(L"시작", L"Start"), app.recording)) app_record(!app.recording);
     if (button(c.x, c.y, c.w, 36, tr(L"기록 폴더", L"Open folder"), false, true, L"\xE838")) ShellExecuteW(nullptr, L"open", data_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -1211,6 +1226,7 @@ static void toggle_data()
 }
 static void flag_row(Col &c, const wchar_t *icon, const std::wstring &t, const std::wstring &d, bool &v, void (*then)())
 {
+    row_right = 66;
     float y = card_row(c, icon, t, d);
     if (!toggle(c.x + c.w - 58, y + 18 - card_more / 2, v)) return;
     v = !v;
@@ -1239,6 +1255,7 @@ static void page_settings(Col &c)
     flag_row(c, L"\xE7C4", tr(L"창 반투명 효과", L"Transparent window"), tr(L"바탕화면이 흐리게 비쳐 보여요", L"Shows the blurred desktop behind"), app.see_through);
     flag_row(c, L"\xE840", tr(L"창을 항상 위에", L"Always on top"), tr(L"다른 창을 써도 가려지지 않아요", L"Stays above other windows"), app.topmost, app_topmost);
     heading(c, tr(L"시작 설정", L"On startup"));
+    row_right = 66;
     float y = card_row(c, L"\xE7E8", tr(L"Windows와 함께 켜기", L"Start with Windows"), tr(L"로그인하면 자동으로 켜져요", L"After you sign in"));
     static int autostart = -1;
     if (autostart < 0) autostart = app_autostart();
@@ -1249,7 +1266,7 @@ static void page_settings(Col &c)
     if (s >= 0) { app.start_full = s; tuning_save(); }
     heading(c, tr(L"단축키", L"Shortcuts"));
     hotkey_row(c);
-    note(c, tr(L"녹화: Ctrl+Alt+R · 일시정지: Ctrl+Alt+P · F11 전체 화면 · F1 설정 · M 음소거 · ↑↓ 소리", L"Record: Ctrl+Alt+R · F11 full screen · F1 panel · M mute · Up/Down volume"), 2);
+    note(c, tr(L"녹화: Ctrl+Alt+R · 일시정지: Ctrl+Alt+P · F11 전체 화면 · F1 설정 · M 음소거 · ↑↓ 소리", L"Record: Ctrl+Alt+R · Pause: Ctrl+Alt+P · F11 full screen · F1 panel · M mute · Up/Down volume"), 2);
     heading(c, tr(L"파일과 초기화", L"Files and reset"));
     float w = (c.w - 6) / 2;
     if (button(c.x, c.y, w, 36, tr(L"설정·기록 폴더", L"Open data folder"), false, true, L"\xE838")) { gui.mode = MOVE; ShellExecuteW(nullptr, L"open", data_dir().c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
@@ -1339,9 +1356,10 @@ static void page_record(Col &c)
     switch_row(c, L"\xE767", tr(L"소리 넣기", L"Include sound"), tr(L"캡처보드 소리를 AAC로 함께 저장", L"The card's sound as AAC"), rec_sound);
     // where the files go
     std::wstring dir = rec_folder();
+    row_right = 246;
     float y = card_row(c, L"\xE838", tr(L"폴더", L"Folder"), L"", 92);
     text(F_SMALL, SOFT, c.x + 50, y + 58, c.w - 64, 20, A_LEFT, dir);
-    if (button(c.x + c.w - 286, y + 13, 86, 34, tr(L"바꾸기", L"Change")))
+    if (button(c.x + c.w - 254, y + 13, 76, 34, tr(L"바꾸기", L"Change")))
     {
         gui.mode = MOVE;
         std::wstring f = pick_folder(dir);
@@ -1349,8 +1367,8 @@ static void page_record(Col &c)
         repaint_all();
         return;
     }
-    if (button(c.x + c.w - 194, y + 13, 86, 34, tr(L"기본", L"Default"))) { rec_set_folder(L""); ini_set(L"rec_folder", L""); }
-    if (button(c.x + c.w - 102, y + 13, 88, 34, tr(L"열기", L"Open"))) ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (button(c.x + c.w - 172, y + 13, 76, 34, tr(L"기본", L"Default"))) { rec_set_folder(L""); ini_set(L"rec_folder", L""); }
+    if (button(c.x + c.w - 90, y + 13, 76, 34, tr(L"열기", L"Open"))) ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     std::wstring last = rec_file();
     if (!last.empty()) note(c, fmt(tr(L"마지막 파일: %ls", L"Last file: %ls"), last.c_str()), 2);
     note(c, tr(L"위쪽 녹화 버튼(전체 화면 버튼 옆)이나 Ctrl+Alt+R로도 시작·정지할 수 있어요. 그래픽카드 인코더를 써서 지연에 영향이 없어요", L"The record button at the top (beside full screen) or Ctrl+Alt+R start and stop it too. The graphics card's encoder is used, so latency does not change"), 2);
